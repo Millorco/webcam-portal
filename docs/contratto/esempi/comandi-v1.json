@@ -1,0 +1,25 @@
+{
+  "ok": true,
+  "server_time": 1795012231,
+  "commands": [
+    {
+      "schema": "command/1",
+      "id": "cmd-4410",
+      "type": "heater.boost",
+      "created_at": 1795012200,
+      "expires_at": 1795014000,
+      "params": { "duration_s": 1800 },
+      "reason": "glass.fog"
+    },
+    {
+      "schema": "command/1",
+      "id": "cmd-4411",
+      "type": "config.set",
+      "created_at": 1795012210,
+      "expires_at": 1795098610,
+      "params": { "key": "general.heat_dewpoint_margin", "value": "4" },
+      "reason": "operatore: margine più largo per l'inverno"
+    }
+  ],
+  "poll_after": 300
+}

@@ -1,5 +1,9 @@
 # Changelog
 
+## Non rilasciato
+
+- Contratto dei dati 1.1 (fase 2, assistenza automatica), solo documentazione: regole di diagnosi `docs/contratto/diagnosi-v1.md`, migrazione 2 `docs/contratto/schema-mariadb-002.sql`, comandi al router `command/1` (`comando-v1.schema.json`, risposte delle API e `GET /api/v1/commands`, evento `command.ack`), campi di diagnosi facoltativi in `telemetry/1`, API Dolibarr documento 2.1 (modulo 1.3: soglie del contratto di noleggio, ticket per regola, disponibilità mensile). Il codice arriva con la 0.2.
+
 ## 0.1.0 - 2026-11-18
 
 Prima versione (fase 1 di Webcam 2.0), secondo il contratto dei dati v1.

@@ -9,7 +9,7 @@ Portale di Webcam 2.0 (Viewlapse): riceve dai router con [luci-app-webcam](https
 
 ## Contratto dei dati
 
-Formati JSON, API e schema del database comuni a tutte le repository: [docs/contratto/](docs/contratto/README.md). Le API implementate sono esattamente quelle di [api-portal-v1.md](docs/contratto/api-portal-v1.md).
+Formati JSON, API e schema del database comuni a tutte le repository: [docs/contratto/](docs/contratto/README.md). Le API implementate sono esattamente quelle di [api-portal-v1.md](docs/contratto/api-portal-v1.md). Il contratto è ora alla versione 1.1 (fase 2: [diagnosi](docs/contratto/diagnosi-v1.md), comandi al router, disponibilità, migrazione [002](docs/contratto/schema-mariadb-002.sql)): il portal 0.1 implementa la 1.0, le aggiunte arrivano con la 0.2.
 
 ## Cosa fa (versione 0.1)
 

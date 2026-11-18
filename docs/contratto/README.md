@@ -2,14 +2,19 @@
 
 Formati e API comuni alle repository del progetto Viewlapse (noleggio di webcam time-lapse con router OpenWrt e reflex Canon). Ogni repository implementa la sua parte **rispettando questi file**; una modifica al contratto si fa qui prima che nel codice.
 
+**Versione del contratto: 1.1** (fase 2, assistenza automatica: diagnosi, comandi al router, disponibilità). È compatibile con la 1.0 della fase 1: aggiunge file, campi facoltativi, endpoint e tabelle, senza cambiare nulla di quello che esiste. I formati restano `photo/1`, `telemetry/1`, `event/1`; si aggiunge `command/1`.
+
 | File | Contenuto |
 |---|---|
 | [foto-v1.md](foto-v1.md), [foto-v1.schema.json](foto-v1.schema.json), [esempi/foto-v1.json](esempi/foto-v1.json) | JSON accanto a ogni foto (`photo/1`) |
 | [telemetria-v1.md](telemetria-v1.md), [telemetria-v1.schema.json](telemetria-v1.schema.json), [esempi/telemetria-v1.json](esempi/telemetria-v1.json) | Misure ogni 5 minuti, inviate a lotti (`telemetry/1`) |
-| [evento-v1.schema.json](evento-v1.schema.json), [esempi/evento-v1.json](esempi/evento-v1.json) | Eventi del router (`event/1`), descritti in api-portal-v1.md |
-| [api-portal-v1.md](api-portal-v1.md) | API del portal per i router e URL pubblico `current.jpg` |
-| [api-dolibarr-v2.md](api-dolibarr-v2.md) | Estensioni del modulo Dolibarr `webcams` (1.2) |
-| [schema-mariadb.sql](schema-mariadb.sql) | Database del portal (MariaDB 11.8 sul VPS, 10.4+ in XAMPP) |
+| [evento-v1.schema.json](evento-v1.schema.json), [esempi/evento-v1.json](esempi/evento-v1.json) | Eventi del router (`event/1`), descritti in api-portal-v1.md; dalla 1.1 anche `command.ack` ([esempi/evento-ack-v1.json](esempi/evento-ack-v1.json)) |
+| [comando-v1.schema.json](comando-v1.schema.json), [esempi/comandi-v1.json](esempi/comandi-v1.json) | 1.1: comandi del portal al router (`command/1`) nelle risposte delle API |
+| [api-portal-v1.md](api-portal-v1.md) | API del portal per i router e URL pubblico `current.jpg` (documento 1.1: comandi al router, `GET /api/v1/commands`) |
+| [api-dolibarr-v2.md](api-dolibarr-v2.md) | Estensioni del modulo Dolibarr `webcams` (1.2; documento 2.1 = modulo 1.3: soglie del contratto di noleggio, ticket per regola, disponibilità) |
+| [diagnosi-v1.md](diagnosi-v1.md) | 1.1: regole di diagnosi (custodia, camera ferma, vetro, inquadratura, otturatore, log), analisi delle foto, impegno di disponibilità |
+| [schema-mariadb.sql](schema-mariadb.sql) | Database del portal, migrazione 1 (MariaDB 11.8 sul VPS, 10.4+ in XAMPP) |
+| [schema-mariadb-002.sql](schema-mariadb-002.sql) | 1.1: migrazione 2 (avvisi, stato delle regole, comandi, metriche e riferimenti delle foto, conteggi dei log, disponibilità) |
 
 ## Componenti
 
@@ -17,6 +22,7 @@ Formati e API comuni alle repository del progetto Viewlapse (noleggio di webcam 
                     HTTPS (Bearer per webcam)
  ┌────────────────┐  photo/1, telemetry/1, event/1   ┌─────────────────────┐   PDO   ┌──────────────┐
  │ luci-app-webcam├─────────────────────────────────►│ webcam-portal       ├────────►│ MariaDB      │
+ │                │◄─ command/1 nelle risposte (1.1) ┤                     │         │              │
  │ router OpenWrt │                                  │ PHP 8.2, senza      │         │ db webcam2   │
  │ + board.ino    │  FTP/FTPS/SFTP (opzione, oggi)   │ framework           │         │ (separato)   │
  │ + Victron      ├──────────► server FTP            └──┬───────────────┬──┘         └──────────────┘
@@ -38,6 +44,10 @@ Formati e API comuni alle repository del progetto Viewlapse (noleggio di webcam 
 | `event/1` | luci-app-webcam (`capture`, avvio, `climate`, aggiornamenti) | webcam-portal (`events`) | `POST /api/v1/event` |
 | inventario (`report`) | luci-app-webcam `inventory_report` | dolibarr-webcams | `POST webcams/report` (invariato) |
 | contatori, Victron sintetico, eventi importanti, ticket, interventi, PDF | webcam-portal | dolibarr-webcams | API `webcams` v2 |
+| `command/1` (1.1) | webcam-portal (regole, operatori) | luci-app-webcam | campo `commands` nelle risposte di `/photo`, `/telemetry`, `/event`, `GET /api/v1/commands`; esito con l'evento `command.ack` |
+| avvisi, ticket per regola, disponibilità mensile (1.1) | webcam-portal | dolibarr-webcams 1.3 | API `webcams` (documento 2.1) |
+| soglie del contratto di noleggio, soglie dell'otturatore, link rttys (1.1) | dolibarr-webcams 1.3 | webcam-portal | `GET webcams/{id}/portal` |
+| conteggi di riavvii ed errori (1.1) | webcam-logserver (VictoriaLogs) | webcam-portal | API HTTP `stats_query`, sola lettura |
 | clienti, stato dei ticket | dolibarr-webcams / Dolibarr | webcam-portal | API Dolibarr (mai le tabelle) |
 | comandi seriali, misure dei sensori | board.ino | luci-app-webcam (`serial`) | UART (invariato; fw 2.4 aggiunge eventuali comandi) |
 | log testuali | router (syslog) | webcam-logserver | syslog TCP (invariato) |
@@ -67,10 +77,13 @@ Il log (VictoriaLogs) resta per leggere cosa è successo riga per riga; il datab
 - **Stessa versione**: si possono aggiungere campi facoltativi.
 - **Versione nuova** (`photo/2`): solo se un campo cambia significato o unità, sparisce o diventa obbligatorio. Il portal accetta tutte le versioni che conosce per almeno 12 mesi; il router scrive la più recente.
 - API: percorso versionato (`/api/v1/`). Il modulo Dolibarr non cambia percorso: `report` resta identico, gli endpoint nuovi si aggiungono (contratto Dolibarr v2 = modulo 1.2).
-- Database: tabella `schema_migrations`; ogni modifica è un file di migrazione numerato nel portal.
+- Database: tabella `schema_migrations`; ogni modifica è un file di migrazione numerato nel portal. Il contratto ne tiene una copia: `schema-mariadb.sql` = migrazione 1, `schema-mariadb-002.sql` = migrazione 2.
+- Contratto: versione `1.x` finché le aggiunte sono compatibili (1.1 = fase 2). I documenti riportano in testa la loro versione quando cambia.
 - Gli schemi JSON hanno `$id` sotto `https://viewlapse.com/schemas/contratto/`: è un identificatore, non serve che l'URL sia raggiungibile.
 
 ## Versioni previste
+
+Fase 1 (contratto 1.0):
 
 | Repository | Versione | Cosa cambia |
 |---|---|---|
@@ -79,6 +92,16 @@ Il log (VictoriaLogs) resta per leggere cosa è successo riga per riga; il datab
 | dolibarr-webcams | 1.2 | colonne nuove, permesso `portal`, endpoint v2 |
 | webcam-portal | 0.1 | ricezione API v1, database, `current.jpg`, pannello minimo |
 | webcam-logserver, webcam-vpn, webcam-rttys | — | nessun cambio di formato; al più il portal accanto agli altri container |
+
+Fase 2 (contratto 1.1, assistenza automatica):
+
+| Repository | Versione | Cosa cambia |
+|---|---|---|
+| luci-app-webcam | 1.2.0 | campi di diagnosi in `climate` (`heater_on_since`, `heater_duty_pct`, `heat_reason`, `heater_boost_until`, `dewpoint_margin`) e in `camera` (`scheduled`, `interval_min`); esecuzione dei comandi `command/1` dalle risposte del portal, `GET /api/v1/commands` all'avvio e con `poll_after`, evento `command.ack`, intestazione `X-Webcam-Features: commands/1`, opzione `commands`; boost del riscaldamento in `climate` |
+| dolibarr-webcams | 1.3 | campi `sla_*` e `availability_*` sulla webcam, tabella `llx_webcams_availability`, `GET {id}/portal`, `POST {id}/tickets` con `portal_rule` (un ticket aperto per webcam e regola), `PUT {id}/tickets/{ticket_id}`, `POST`/`GET {id}/availability` |
+| webcam-portal | 0.2 | migrazione 002, regole di [diagnosi-v1.md](diagnosi-v1.md), analisi delle foto con GD, comandi al router, lettura dei log da VictoriaLogs, disponibilità giornaliera e mensile (pannello operatore e cliente), sincronizzazione di ticket e disponibilità con Dolibarr |
+| board.ino | — | nessun cambio necessario; un firmware futuro con tachimetro della ventola attiverebbe `fan_rpm` e la regola `enclosure.fan` |
+| webcam-logserver | — | nessun cambio: il portal usa le query di `docs/query.md` |
 
 ## Punti da decidere
 

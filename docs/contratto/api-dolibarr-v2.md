@@ -2,6 +2,8 @@
 
 Estensioni del modulo [dolibarr-webcams](https://github.com/Millorco/dolibarr-webcams) (oggi 1.1, endpoint `POST /api/index.php/webcams/report`). La v2 del contratto corrisponde al **modulo 1.2**: stessa classe `Webcams` in `class/api_webcams.class.php`, nuovi metodi con l'annotazione `@url` di Restler come quelli esistenti.
 
+Versione del documento: **2.1** (contratto 1.1) = **modulo 1.3**, compatibile con la 1.2: aggiunge le soglie del contratto di noleggio sulla webcam, `GET webcams/{id}/portal`, l'aggiornamento e la chiusura dei ticket, il registro della disponibilità mensile. Vedi [Diagnosi e disponibilità (modulo 1.3)](#diagnosi-e-disponibilità-modulo-13).
+
 ## Principi
 
 - **`POST webcams/report` resta invariato**: stessi campi, stessa risposta `{ok, id, new}`, stessi eventi in agenda. I router con luci-app-webcam 1.0-rc8 continuano a funzionare. Può ricevere campi nuovi facoltativi (sotto), ignorati dal modulo 1.1 se non ancora aggiornato (finiscono solo in `report_json`).
@@ -17,7 +19,7 @@ Due utenti API distinti, non amministratori:
 | Utente | Permessi | Usa |
 |---|---|---|
 | `webcam-router` (esiste) | Webcam → Leggere, Creare/modificare | `report` |
-| `webcam-portal` (nuovo) | Webcam → Leggere, **Sincronizzare dal portal** (nuovo); Agenda → creare eventi; Ticket → creare (se il modulo è attivo); Interventi → creare (se attivo); Soggetti terzi → leggere e **Estendi l'accesso a tutti i terzi** (senza, i terzi dei clienti non sono visibili all'utente API) | tutti gli endpoint sotto |
+| `webcam-portal` (nuovo) | Webcam → Leggere, **Sincronizzare dal portal** (nuovo); Agenda → creare eventi; Ticket → leggere e creare (se il modulo è attivo; leggere serve dal modulo 1.3 per lo stato con `GET /tickets/{id}`); Interventi → creare (se attivo); Soggetti terzi → leggere e **Estendi l'accesso a tutti i terzi** (senza, i terzi dei clienti non sono visibili all'utente API) | tutti gli endpoint sotto |
 
 Nuovo permesso in `modWebcams.class.php`, dopo i tre esistenti:
 
@@ -173,6 +175,140 @@ Allega un PDF (es. certificazione delle giornate di maltempo, rapporto mensile) 
 - Risposta `{ "ok": true, "id": 12, "file": "webcam/WC-9483C412ABCD/maltempo-2026-11.pdf" }`.
 - Perché non l'API standard `POST /documents/upload`: richiede un `modulepart` che i moduli esterni non sempre supportano e non verifica i permessi del modulo `webcams`. Se in futuro funziona per `webcams`, l'endpoint dedicato può diventarne un semplice involucro.
 
+## Diagnosi e disponibilità (modulo 1.3)
+
+Aggiunte per la fase 2 (regole in [diagnosi-v1.md](diagnosi-v1.md)). Il portal applica le regole sui suoi dati e usa Dolibarr per **i ticket**, per **leggere le soglie del contratto di noleggio** e per **registrare la disponibilità mensile**. Tutto con l'utente `webcam-portal` e il permesso `webcam portal` della 1.2; nessun permesso nuovo.
+
+### Cosa c'è già nella 1.2 e resta com'è
+
+- **Vita dell'otturatore**: `report` e `POST {id}/counters` scrivono un evento in agenda quando gli scatti usati (`shutter_count`, altrimenti `shots_total`) superano `WEBCAMS_SHUTTER_WARN_PCT` (90%) e `WEBCAMS_SHUTTER_LIFE` (100.000), una volta per soglia e per fotocamera; l'indice del modulo ha il riquadro "Otturatore a fine vita". **Dolibarr resta la sola fonte di questi avvisi**: il portal non manda eventi né ticket per l'otturatore e legge le stesse soglie con `GET {id}/portal` per mostrarle uguali.
+- `POST {id}/tickets` con idempotenza su `portal_event_id` (in `extraparams.ref_ext`) e collegamento alla webcam.
+- Pulsanti rttys sulla scheda (`WEBCAMS_RTTYS_URL`): gli stessi link vanno nel testo dei ticket del portal.
+
+### Nuovi campi di `llx_webcams_webcam`
+
+File `sql/update_1.2-1.3.sql`, campi in `$fields` modificabili dalla scheda (sono dati del contratto, li compila chi lo firma), etichette in `langs/*/webcams.lang`:
+
+```sql
+-- impegno di disponibilità del contratto di noleggio
+ALTER TABLE llx_webcams_webcam ADD COLUMN sla_enabled smallint DEFAULT 0 NOT NULL;
+ALTER TABLE llx_webcams_webcam ADD COLUMN sla_offline_hours integer;       -- N: ore senza foto (predefinito 3)
+ALTER TABLE llx_webcams_webcam ADD COLUMN sla_response_days integer;       -- X: giorni per intervenire (predefinito 3)
+ALTER TABLE llx_webcams_webcam ADD COLUMN sla_target_pct double(5,2);      -- disponibilità mensile promessa (predefinito 98)
+ALTER TABLE llx_webcams_webcam ADD COLUMN sla_hours varchar(11);           -- ore di scatto previste 'HH:MM-HH:MM', vuoto = 24 ore
+ALTER TABLE llx_webcams_webcam ADD COLUMN sla_weekdays varchar(7);         -- giorni previsti, cifre ISO 1-7, vuoto = tutti
+-- ultima disponibilità mensile definitiva (per elenco e indice)
+ALTER TABLE llx_webcams_webcam ADD COLUMN availability_pct double(5,2);
+ALTER TABLE llx_webcams_webcam ADD COLUMN availability_period varchar(7);  -- AAAA-MM
+```
+
+Valori vuoti = predefiniti di `WEBCAMS_SLA_OFFLINE_HOURS`, `WEBCAMS_SLA_RESPONSE_DAYS`, `WEBCAMS_SLA_TARGET_PCT` (nuove impostazioni del modulo, 3 / 3 / 98). Il contratto di noleggio vero (modulo Contratti) può in futuro dare questi valori; per ora stanno sulla webcam perché la webcam passa da un cliente all'altro e il portal li legge da lì.
+
+Tabella nuova del registro della disponibilità (`sql/llx_webcams_availability.sql` e `.key.sql`):
+
+```sql
+CREATE TABLE llx_webcams_availability (
+  rowid integer AUTO_INCREMENT PRIMARY KEY NOT NULL,
+  entity integer DEFAULT 1 NOT NULL,
+  fk_webcam integer NOT NULL,
+  fk_soc integer,                         -- cliente della webcam in quel mese
+  period varchar(7) NOT NULL,             -- AAAA-MM, fuso della webcam
+  availability_pct double(5,2),           -- NULL se nessuna ora utile
+  expected_hours integer NOT NULL,
+  excluded_hours integer DEFAULT 0 NOT NULL,
+  available_hours integer DEFAULT 0 NOT NULL,
+  incidents integer DEFAULT 0 NOT NULL,
+  downtime_hours double(7,1) DEFAULT 0 NOT NULL,
+  response_breaches integer DEFAULT 0 NOT NULL,
+  sla_enabled smallint DEFAULT 0 NOT NULL,
+  target_pct double(5,2),
+  sla_met smallint,                       -- NULL senza impegno
+  final smallint DEFAULT 0 NOT NULL,      -- 1 = mese chiuso, definitivo
+  date_creation datetime NOT NULL,
+  tms timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=innodb;
+ALTER TABLE llx_webcams_availability ADD UNIQUE INDEX uk_webcams_availability (fk_webcam, period);
+ALTER TABLE llx_webcams_availability ADD INDEX idx_webcams_availability_soc (fk_soc, period);
+```
+
+La scheda della webcam mostra la tabella dei mesi (nuova scheda "Disponibilità" o riquadro nella scheda principale).
+
+### `GET webcams/{id}/portal`
+
+Quello che il portal legge da Dolibarr per una webcam, in una sola chiamata (a ogni sincronizzazione, al massimo una volta l'ora). Il metodo `PUT {id}/portal` della 1.2 resta per la scrittura.
+
+```json
+{
+  "ok": true, "id": 12, "ref": "WC-9483C412ABCD", "status": 1,
+  "customer": { "id": 57, "name": "Impresa Rossi Costruzioni" },
+  "portal": { "portal_slug": "monte-cavo", "url_current": "https://portal.viewlapse.com/cam/monte-cavo/current.jpg",
+              "windy_published": 1, "windy_id": "1712345678" },
+  "sla": { "enabled": true, "offline_hours": 3, "response_days": 3, "target_pct": 98.0,
+           "hours": "07:00-19:00", "weekdays": "12345" },
+  "shutter": { "life": 100000, "warn_pct": 90, "used": 48213, "level": "" },
+  "rttys": { "terminal": "https://rttys.viewlapse.com/api/connect/WC-9483C412ABCD",
+             "luci": "https://rttys.viewlapse.com/api/web/WC-9483C412ABCD/http/127.0.0.1%3A80%2F" }
+}
+```
+
+- `sla` con i predefiniti già applicati ai campi vuoti; `enabled = false` se `sla_enabled = 0`.
+- `shutter.level`: `''`, `warning`, `danger` come `webcamsShutterLevel()`.
+- `rttys`: `{}` se `WEBCAMS_RTTYS_URL` non è impostato (`webcamsRttysUrls()`).
+- `customer`: `null` senza cliente. Permesso: `webcam portal`.
+
+### `POST webcams/{id}/tickets` (esteso)
+
+Campi nuovi facoltativi, oltre a quelli della 1.2:
+
+```json
+{ "subject": "Monte Cavo: riscaldamento della custodia guasto", "message": "Regola: enclosure.heater ...",
+  "type_code": "ISSUE", "severity_code": "HIGH", "category_code": "WEBCAM",
+  "portal_event_id": 551240, "portal_rule": "enclosure.heater", "portal_alert_id": 4411,
+  "due_date": "2026-11-21" }
+```
+
+- `portal_rule` (id della regola, `^[a-z][a-z0-9_]*\.[a-z0-9_.]+$`) e `portal_alert_id` vanno in `extraparams` del ticket (`portal_rule`, `portal_alert_id`), accanto a `ref_ext`.
+- **Un ticket aperto per webcam e regola**: se esiste un ticket collegato alla webcam con lo stesso `portal_rule` e stato diverso da chiuso (8) o annullato (9), il modulo **non** ne crea un altro: risponde con quello, `"duplicate": true, "reason": "open_for_rule"`, e aggiunge `message` come messaggio privato. Il portal ha già il suo vincolo (un avviso aperto per webcam e regola); questo protegge da un database del portal ripristinato o da due portal.
+- `due_date` (`AAAA-MM-GG`, facoltativo): scadenza dell'intervento dell'impegno di disponibilità. Il Ticket non ha un campo per la scadenza: si salva in `extraparams.due_date` e il portal la scrive anche nel messaggio.
+- Il messaggio è testo semplice con a capo: il modulo lo converte con `dol_nl2br(dol_escape_htmltag())` se non è già HTML. Il ticket non manda email al cliente (`origin_email` vuoto, nessuna notifica ai contatti esterni).
+- Risposta come nella 1.2, più `"status": 0` (stato del ticket).
+
+### `PUT webcams/{id}/tickets/{ticket_id}`
+
+Aggiorna o chiude un ticket aperto dal portal. Solo ticket collegati alla webcam `{id}` e con `extraparams.ref_ext` che inizia con `portal:` (`403` altrimenti: il portal non tocca i ticket aperti a mano).
+
+```json
+{ "message": "Condizione rientrata alle 18:20: ciclo di riscaldamento ok (+2,4 °C).", "close": 1,
+  "severity_code": "HIGH", "portal_event_id": 551301 }
+```
+
+| Campo | Effetto |
+|---|---|
+| `message` | messaggio **privato** nel ticket (evento `TICKET_MSG_PRIVATE`, come "Aggiungi un messaggio privato"); obbligatorio |
+| `close` | `1` = chiudi il ticket (`Ticket::close()`) se il suo stato è **non letto (0) o letto (1)**: nessuno ci sta lavorando. Con stato assegnato, in corso, in attesa (2-7) aggiunge solo il messaggio e risponde `"closed": false, "close_refused": "in_progress"`: lo chiude l'operatore |
+| `severity_code` | facoltativo, aggiorna la gravità (solo verso l'alto, come gli avvisi del portal) |
+| `portal_event_id` | idempotenza del messaggio: lo stesso valore due volte non aggiunge un secondo messaggio (`"duplicate": true`) |
+
+Risposta: `{ "ok": true, "ticket_id": 341, "status": 8, "closed": true, "duplicate": false }`. `409` se il ticket è già chiuso o annullato (il portal allora non riprova e segna l'avviso `ticket_closed_by_operator`).
+
+Lo stato dei ticket aperti il portal lo legge con l'API standard `GET /tickets/{id}` (`fk_statut`), che richiede il permesso Ticket → leggere.
+
+### `POST webcams/{id}/availability`
+
+Registro della disponibilità mensile, calcolata dal portal ([diagnosi-v1.md](diagnosi-v1.md#impegno-di-disponibilità)).
+
+```json
+{ "period": "2026-11", "availability_pct": 99.12, "expected_hours": 252, "excluded_hours": 4,
+  "available_hours": 246, "incidents": 1, "downtime_hours": 2.0, "response_breaches": 0,
+  "sla_enabled": 1, "target_pct": 98.0, "sla_met": 1, "final": 1 }
+```
+
+- Inserisce o aggiorna la riga `(fk_webcam, period)`; `fk_soc` = cliente attuale della webcam. Una riga con `final = 1` non si modifica più: `409` (le correzioni si fanno a mano in Dolibarr).
+- Con `final = 1` aggiorna anche `availability_pct` e `availability_period` della webcam (se il periodo è il più recente) e crea un evento in agenda "Disponibilità novembre 2026: 99,12% (impegno 98%: rispettato)". Un impegno **non** rispettato crea l'evento con il codice `AC_WEBCAMS_SLA` per poterlo filtrare.
+- Il portal manda il mese provvisorio (`final = 0`) al più una volta al giorno, il definitivo il 3 del mese dopo.
+- Risposta: `{ "ok": true, "id": 12, "period": "2026-11", "final": true, "updated": true }`.
+- `GET webcams/{id}/availability?from=2026-01&to=2026-12`: elenco dei mesi registrati, per il rapporto mensile e per i preventivi di rinnovo.
+
 ## Riepilogo
 
 | Endpoint | Chiamato da | Permesso |
@@ -185,5 +321,8 @@ Allega un PDF (es. certificazione delle giornate di maltempo, rapporto mensile) 
 | `POST webcams/{id}/tickets` | portal | `webcam portal` + ticket |
 | `POST webcams/{id}/interventions` | portal | `webcam portal` + ficheinter |
 | `POST webcams/{id}/documents` | portal | `webcam portal` |
+| `GET webcams/{id}/portal` (1.3) | portal | `webcam portal` |
+| `PUT webcams/{id}/tickets/{ticket_id}` (1.3) | portal | `webcam portal` + ticket |
+| `POST webcams/{id}/availability`, `GET webcams/{id}/availability` (1.3) | portal | `webcam portal` |
 
 Dolibarr richiesto: 20 o successivo, come oggi (`need_dolibarr_version`).
