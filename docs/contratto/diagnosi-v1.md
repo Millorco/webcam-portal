@@ -222,7 +222,7 @@ Stanno in **Dolibarr, sulla scheda della webcam** (colonne `sla_*` del modulo 1.
 | `sla_offline_hours` | **N**: ore senza foto (nelle ore previste) dopo le quali scatta l'impegno di intervento | 3 |
 | `sla_response_days` | **X**: giorni entro cui intervenire (calendario) | 3 |
 | `sla_target_pct` | disponibilità mensile promessa | 98,0 |
-| `sla_hours` | ore di scatto previste, ora locale `HH:MM-HH:MM` (vuoto = 24 ore) | vuoto |
+| `sla_hours` | ore di scatto previste, ora locale `HH:MM-HH:MM`, fine al massimo `24:00` (vuoto = 24 ore) | vuoto |
 | `sla_weekdays` | giorni previsti, cifre ISO 1 = lunedì ... 7 = domenica (vuoto = tutti) | vuoto |
 
 Con `sla_enabled = 1`:

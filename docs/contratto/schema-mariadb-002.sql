@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS webcam_service (
 	PRIMARY KEY (webcam_id),
 	CONSTRAINT fk_service_webcam FOREIGN KEY (webcam_id) REFERENCES webcams (id)
 		ON DELETE CASCADE,
-	CONSTRAINT ck_service_hours CHECK (sla_hours IS NULL OR sla_hours REGEXP '^([01][0-9]|2[0-3]):[0-5][0-9]-([01][0-9]|2[0-4]):[0-5][0-9]$'),
+	CONSTRAINT ck_service_hours CHECK (sla_hours IS NULL OR sla_hours REGEXP '^([01][0-9]|2[0-3]):[0-5][0-9]-(([01][0-9]|2[0-3]):[0-5][0-9]|24:00)$'),
 	CONSTRAINT ck_service_weekdays CHECK (sla_weekdays IS NULL OR sla_weekdays REGEXP '^[1-7]{1,7}$'),
 	CONSTRAINT ck_service_target CHECK (sla_target_pct BETWEEN 0 AND 100)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
