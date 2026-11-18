@@ -52,7 +52,8 @@ return [
 	// Dolibarr (modulo webcams, api-dolibarr-v2.md). Vuoto = sincronizzazione spenta.
 	'dolibarr' => [
 		// URL delle API, fino a index.php compreso.             DOLIBARR_URL
-		// Es. http://localhost/dolibarr/htdocs/api/index.php
+		// Es. http://localhost/dolibarr/api/index.php (XAMPP), oppure
+		// http://localhost/dolibarr/htdocs/api/index.php se Dolibarr è nella sua cartella htdocs
 		'url' => '',
 		'api_key' => '',            // DOLIBARR_API_KEY (utente webcam-portal)
 		'timeout' => 20,            // DOLIBARR_TIMEOUT, secondi

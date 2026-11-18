@@ -190,7 +190,7 @@ Oppure dall'interfaccia: *Utilità di pianificazione → Crea attività di base*
 
 ```php
 'dolibarr' => [
-	'url' => 'http://localhost/dolibarr/htdocs/api/index.php',   // fino a index.php
+	'url' => 'http://localhost/dolibarr/api/index.php',   // fino a index.php; se Dolibarr ha la cartella htdocs: .../dolibarr/htdocs/api/index.php
 	'api_key' => '<chiave API dell'utente webcam-portal>',
 ],
 ```
