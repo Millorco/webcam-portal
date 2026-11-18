@@ -59,4 +59,42 @@ return [
 		'timeout' => 20,            // DOLIBARR_TIMEOUT, secondi
 		'verify_tls' => true,       // DOLIBARR_VERIFY_TLS
 	],
+
+	// Accesso remoto rttys per i link nei ticket, se Dolibarr (GET
+	// webcams/{id}/portal) non li manda: <url>/api/connect/<ref Dolibarr>.
+	'rttys_url' => 'https://remote.viewlapse.com',  // RTTYS_URL ('' = nessun link)
+
+	// Diagnosi automatica (contratto 1.1, diagnosi-v1.md): bin/rules.php.
+	'rules' => [
+		'reopen_within_h' => 24,    // stessa regola entro N ore dalla chiusura: si riapre lo stesso avviso
+		// Soglie diverse dai predefiniti per tutte le webcam, per regola, es.
+		// 'camera.stalled' => ['hours' => 4, 'capture_now' => true],
+		// (per una sola webcam: tabella rule_config dal pannello).
+		'params' => [],
+		'disabled' => [],           // id di regole spente per tutte le webcam, es. ['enclosure.fan']
+	],
+
+	// Analisi delle foto con GD (bin/photo-metrics.php, mai durante l'upload).
+	'photo_metrics' => [
+		'enabled' => true,
+		// Un JPEG da 24 MP decompresso occupa circa 100 MB: sotto questo
+		// limite la foto si salta (skip_reason = memory) e si scrive nel log.
+		'memory_limit' => '512M',   // PHOTO_METRICS_MEMORY
+		'every_min' => 30,          // al massimo una foto analizzata ogni N minuti per webcam
+		'max_per_run' => 300,       // foto analizzate per esecuzione, tutte le webcam
+	],
+
+	// Log dei router in VictoriaLogs (webcam-logserver, docs/query.md), sola
+	// lettura con l'API HTTP. URL vuoto = regole logs.* solo con gli eventi.
+	'victorialogs' => [
+		'url' => '',                // VICTORIALOGS_URL, es. http://victorialogs:9428
+		'user' => '',               // VICTORIALOGS_USER (Basic Auth, es. admin)
+		'pass' => '',               // VICTORIALOGS_PASS (contenuto di vl_password)
+		'timeout' => 5,             // VICTORIALOGS_TIMEOUT, secondi
+		'every_min' => 15,          // una query ogni N minuti (bin/rules.php gira ogni 5)
+	],
+
+	// Disponibilità mensile anche nella pagina pubblica /cam/{slug}/ delle
+	// webcam pubbliche (solo la percentuale).                 AVAILABILITY_PUBLIC
+	'availability_public' => false,
 ];

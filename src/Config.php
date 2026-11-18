@@ -36,6 +36,13 @@ final class Config
 		'DOLIBARR_API_KEY' => 'dolibarr.api_key',
 		'DOLIBARR_TIMEOUT' => 'dolibarr.timeout',
 		'DOLIBARR_VERIFY_TLS' => 'dolibarr.verify_tls',
+		'RTTYS_URL' => 'rttys_url',
+		'PHOTO_METRICS_MEMORY' => 'photo_metrics.memory_limit',
+		'VICTORIALOGS_URL' => 'victorialogs.url',
+		'VICTORIALOGS_USER' => 'victorialogs.user',
+		'VICTORIALOGS_PASS' => 'victorialogs.pass',
+		'VICTORIALOGS_TIMEOUT' => 'victorialogs.timeout',
+		'AVAILABILITY_PUBLIC' => 'availability_public',
 	];
 
 	/** @param array<string,mixed> $values */
