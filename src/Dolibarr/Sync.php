@@ -7,6 +7,7 @@ namespace WebcamPortal\Dolibarr;
 use WebcamPortal\Config;
 use WebcamPortal\Db;
 use WebcamPortal\Log;
+use WebcamPortal\Service\ServiceSettings;
 
 /**
  * Sincronizzazione verso il modulo Dolibarr webcams (api-dolibarr-v2.md):
@@ -25,7 +26,7 @@ final class Sync
 
 	/** Endpoint v2 trovati assenti in questo giro: non si riprovano. */
 	private array $missing = [];
-	public array $stats = ['webcams' => 0, 'linked' => 0, 'portal' => 0, 'counters' => 0, 'events' => 0, 'errors' => 0, 'missing_endpoints' => 0];
+	public array $stats = ['webcams' => 0, 'linked' => 0, 'portal' => 0, 'settings' => 0, 'counters' => 0, 'events' => 0, 'availability' => 0, 'errors' => 0, 'missing_endpoints' => 0];
 
 	public function __construct(private Client $client, private string $publicBaseUrl)
 	{
@@ -91,6 +92,13 @@ final class Sync
 			$this->stats['portal']++;
 		}
 
+		// 1b. soglie del contratto di noleggio, otturatore e rttys (modulo 1.3)
+		$info = $this->call('GET', "webcams/$did/portal", [], $dryRun, $w, 'GET webcams/{id}/portal');
+		if (is_array($info) && isset($info['sla']) && !$dryRun) {
+			$this->saveSettings($wid, $info);
+			$this->stats['settings']++;
+		}
+
 		// 2. contatori e Victron
 		$body = $this->countersBody($w);
 		if ($body !== null && $this->call('POST', "webcams/$did/counters", $body, $dryRun, $w) !== null) {
@@ -101,9 +109,14 @@ final class Sync
 		}
 
 		// 3. eventi importanti degli ultimi 7 giorni non ancora inviati
+		// (gli avvisi delle regole: solo quelli con azione agenda; quelli con
+		// ticket li manda TicketSync, quelli del solo pannello nessuno)
 		$events = Db::all(
-			"SELECT * FROM events WHERE webcam_id = ? AND dolibarr_synced_at IS NULL
-			   AND severity IN ('warning','error','critical') AND ts >= ? ORDER BY ts LIMIT 50",
+			"SELECT * FROM events WHERE webcam_id = ? AND dolibarr_synced_at IS NULL AND ts >= ?
+			   AND (CASE WHEN JSON_VALUE(data, '$.channel') IS NULL THEN severity IN ('warning','error','critical')
+			             ELSE JSON_VALUE(data, '$.channel') = 'agenda' END)
+			   AND COALESCE(JSON_VALUE(data, '$.forward'), 'true') <> 'false'
+			 ORDER BY ts LIMIT 50",
 			[$wid, Db::dt(time() - 7 * 86400)]
 		);
 		foreach ($events as $e) {
@@ -124,6 +137,83 @@ final class Sync
 				Db::exec('UPDATE events SET dolibarr_synced_at = UTC_TIMESTAMP(), dolibarr_actioncomm_id = ? WHERE id = ?', [
 					is_array($res) && isset($res['actioncomm_id']) ? (int) $res['actioncomm_id'] : null, $e['id'],
 				]);
+			}
+		}
+
+		// 4. disponibilità mensile (modulo 1.3)
+		$this->availability($w, $did, $dryRun);
+	}
+
+	/** GET webcams/{id}/portal -> webcam_service (source = dolibarr). */
+	private function saveSettings(int $wid, array $info): void
+	{
+		$sla = (array) $info['sla'];
+		$sh = (array) ($info['shutter'] ?? []);
+		$rt = (array) ($info['rttys'] ?? []);
+		try {
+			ServiceSettings::save($wid, [
+				'sla_enabled' => !empty($sla['enabled']) ? 1 : 0,
+				'sla_offline_hours' => (int) ($sla['offline_hours'] ?? 3) ?: 3,
+				'sla_response_days' => (int) ($sla['response_days'] ?? 3) ?: 3,
+				'sla_target_pct' => (float) ($sla['target_pct'] ?? 98),
+				'sla_hours' => ($sla['hours'] ?? '') ?: null,
+				'sla_weekdays' => ($sla['weekdays'] ?? '') ?: null,
+				'shutter_life' => isset($sh['life']) ? (int) $sh['life'] : null,
+				'shutter_warn_pct' => isset($sh['warn_pct']) ? (int) $sh['warn_pct'] : null,
+				'rttys_terminal_url' => isset($rt['terminal']) && is_string($rt['terminal']) ? substr($rt['terminal'], 0, 255) : null,
+				'rttys_luci_url' => isset($rt['luci']) && is_string($rt['luci']) ? substr($rt['luci'], 0, 255) : null,
+			], 'dolibarr');
+		} catch (\InvalidArgumentException $e) {
+			Log::warning("webcam $wid: soglie del contratto di noleggio di Dolibarr non valide: " . $e->getMessage(), self::LOG);
+		}
+		if (isset($info['ref']) && is_string($info['ref'])) {
+			Db::exec('UPDATE webcams SET dolibarr_ref = ? WHERE id = ?', [substr($info['ref'], 0, 128), $wid]);
+		}
+	}
+
+	/**
+	 * POST webcams/{id}/availability: mese definitivo una volta, provvisorio
+	 * al più una volta al giorno. 409 su un mese già definitivo in Dolibarr =
+	 * già registrato.
+	 */
+	private function availability(array $w, int $did, bool $dryRun): void
+	{
+		$today = (new \DateTimeImmutable('now', ServiceSettings::tz($w)))->setTime(0, 0)->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+		$rows = Db::all(
+			'SELECT * FROM availability_monthly WHERE webcam_id = ? AND (dolibarr_synced_at IS NULL OR (final = 0 AND dolibarr_synced_at < ?))
+			  ORDER BY month LIMIT 24',
+			[$w['id'], $today]
+		);
+		foreach ($rows as $m) {
+			$body = [
+				'period' => $m['month'],
+				'availability_pct' => $m['pct'] === null ? null : (float) $m['pct'],
+				'expected_hours' => (int) $m['expected_h'],
+				'excluded_hours' => (int) $m['excluded_h'],
+				'available_hours' => (int) $m['available_h'],
+				'incidents' => (int) $m['incidents'],
+				'downtime_hours' => (float) $m['downtime_h'],
+				'response_breaches' => (int) $m['response_breaches'],
+				'sla_enabled' => (int) $m['sla_enabled'],
+				'target_pct' => $m['target_pct'] === null ? null : (float) $m['target_pct'],
+				'sla_met' => $m['sla_met'] === null ? null : (int) $m['sla_met'],
+				'final' => (int) $m['final'],
+			];
+			try {
+				$res = $this->call('POST', "webcams/$did/availability", $body, $dryRun, $w);
+			} catch (DolibarrException $e) {
+				if ($e->status !== 409) {
+					throw $e;
+				}
+				Log::info("disponibilità {$m['month']} della webcam {$w['id']} già definitiva in Dolibarr", self::LOG);
+				$res = ['ok' => true];
+			}
+			if ($res === null) {
+				return;
+			}
+			$this->stats['availability']++;
+			if (!$dryRun) {
+				Db::exec('UPDATE availability_monthly SET dolibarr_synced_at = UTC_TIMESTAMP() WHERE webcam_id = ? AND month = ?', [$w['id'], $m['month']]);
 			}
 		}
 	}
@@ -236,18 +326,18 @@ final class Sync
 	 * Chiamata a un endpoint v2. Restituisce la risposta, o null se
 	 * l'endpoint non esiste (già annotato nel log).
 	 */
-	private function call(string $method, string $path, array $body, bool $dryRun, array $w): mixed
+	private function call(string $method, string $path, array $body, bool $dryRun, array $w, ?string $key = null): mixed
 	{
-		$key = $method . ' webcams/{id}/' . basename($path);
+		$key ??= $method . ' webcams/{id}/' . basename($path);
 		if (isset($this->missing[$key])) {
 			return null;
 		}
-		if ($dryRun) {
+		if ($dryRun && $method !== 'GET') {
 			Log::info("[prova] $method $path " . json_encode($body, JSON_UNESCAPED_SLASHES), self::LOG);
 			return [];
 		}
 		try {
-			return $this->client->request($method, $path, $body) ?? [];
+			return $this->client->request($method, $path, $method === 'GET' ? null : $body) ?? [];
 		} catch (DolibarrException $e) {
 			if ($e->status === 404 && stripos($e->apiMessage(), 'webcam not found') !== false) {
 				Log::warning("webcam {$w['id']}: la scheda Dolibarr {$w['dolibarr_id']} non esiste più, la ricollego al prossimo giro", self::LOG);
@@ -269,6 +359,7 @@ final class Sync
 		}
 		$this->missing[$key] = true;
 		$this->stats['missing_endpoints']++;
-		Log::warning("$key non disponibile in Dolibarr (modulo webcams < 1.2, contratto v2 non ancora installato): salto", self::LOG);
+		$v = in_array($key, ['GET webcams/{id}/portal', 'POST webcams/{id}/availability'], true) ? '1.3' : '1.2';
+		Log::warning("$key non disponibile in Dolibarr (modulo webcams < $v): salto", self::LOG);
 	}
 }
