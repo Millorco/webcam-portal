@@ -7,6 +7,7 @@ namespace WebcamPortal\Api;
 use WebcamPortal\Db;
 use WebcamPortal\Http\Request;
 use WebcamPortal\Log;
+use WebcamPortal\Service\Commands;
 
 /**
  * POST /api/v1/event: lotto event/1. Idempotenza su (webcam_id, event_uid).
@@ -85,6 +86,9 @@ final class EventApi
 			]);
 			if ($st->rowCount() > 0) {
 				$accepted++;
+				if ($type === 'command.ack') {
+					Commands::ack($wid, (int) Db::pdo()->lastInsertId(), $data, $synced ? $t : time());
+				}
 			} else {
 				$duplicates++;
 			}

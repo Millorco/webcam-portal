@@ -13,6 +13,9 @@ use WebcamPortal\Service\Tokens;
  */
 final class TokenAuth
 {
+	/** Ultima autenticazione riuscita della richiesta (per i comandi nella risposta). */
+	public static ?array $last = null;
+
 	/**
 	 * @return array{webcam: array<string,mixed>, token: array<string,mixed>, scopes: list<string>}
 	 */
@@ -59,7 +62,7 @@ final class TokenAuth
 
 		$token = ['id' => (int) $row['token_id'], 'scopes' => $scopes];
 		unset($row['token_id'], $row['scopes'], $row['expires_at'], $row['revoked_at']);
-		return ['webcam' => $row, 'token' => $token, 'scopes' => $scopes];
+		return self::$last = ['webcam' => $row, 'token' => $token, 'scopes' => $scopes];
 	}
 
 	/** Il mac del corpo deve essere quello della webcam del token (409). */

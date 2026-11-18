@@ -12,6 +12,7 @@ use WebcamPortal\Api\TelemetryApi;
 use WebcamPortal\Api\TokenAuth;
 use WebcamPortal\Http\Request;
 use WebcamPortal\Http\Response;
+use WebcamPortal\Service\Commands;
 use WebcamPortal\Web\PublicController;
 
 /**
@@ -57,6 +58,35 @@ final class App
 		}
 	}
 
+	/**
+	 * Comandi in attesa nelle risposte di successo (api-portal-v1.md 1.1):
+	 * solo con X-Webcam-Features: commands/1 e token con scope "commands".
+	 *
+	 * @param array<string,mixed> $data
+	 * @return array<string,mixed>
+	 */
+	private static function withCommands(Request $req, array $data, bool $always): array
+	{
+		$auth = TokenAuth::$last;
+		if ($auth === null || !Commands::routerAccepts($req->header('X-Webcam-Features'), $auth['scopes'])) {
+			return $data;
+		}
+		try {
+			$d = Commands::deliver((int) $auth['webcam']['id']);
+		} catch (\Throwable $e) {
+			// i comandi non devono mai far fallire l'invio di foto o dati
+			Log::error('comandi non consegnati: ' . $e->getMessage());
+			return $data;
+		}
+		if ($d['commands'] !== [] || $always) {
+			$data['commands'] = $d['commands'];
+		}
+		if ($d['poll_after'] !== null) {
+			$data['poll_after'] = $d['poll_after'];
+		}
+		return $data;
+	}
+
 	private static function api(Request $req, Config $config): void
 	{
 		try {
@@ -74,6 +104,11 @@ final class App
 				case 'POST /api/v1/event':
 					[$status, $data] = EventApi::handle($req);
 					break;
+				case 'GET /api/v1/commands':
+					TokenAuth::authenticate($req, '');
+					$status = 200;
+					$data = ['ok' => true, 'commands' => []];
+					break;
 				case 'GET /api/v1/whoami':
 					$auth = TokenAuth::authenticate($req, '');
 					$w = $auth['webcam'];
@@ -85,11 +120,14 @@ final class App
 					];
 					break;
 				default:
-					$known = ['/api/v1/photo', '/api/v1/telemetry', '/api/v1/event', '/api/v1/whoami'];
+					$known = ['/api/v1/photo', '/api/v1/telemetry', '/api/v1/event', '/api/v1/whoami', '/api/v1/commands'];
 					if (in_array(rtrim($req->path, '/'), $known, true)) {
 						throw new ApiError(405, 'method_not_allowed', 'Metodo non ammesso');
 					}
 					throw new ApiError(404, 'not_found', 'Endpoint inesistente');
+			}
+			if ($status < 300 && $route !== 'GET /api/v1/whoami') {
+				$data = self::withCommands($req, $data, $route === 'GET /api/v1/commands');
 			}
 			Response::json($status, $data);
 		} catch (ApiError $e) {
