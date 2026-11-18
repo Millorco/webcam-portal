@@ -200,8 +200,8 @@ Ogni comando è un oggetto `command/1` ([comando-v1.schema.json](comando-v1.sche
 
 | `type` | `params` | Cosa fa il router | Rifiuta con `reason` |
 |---|---|---|---|
-| `heater.boost` | `duration_s` 300-3600 | scrive `/tmp/webcam/heater_boost_until`; `climate` tiene acceso il riscaldamento (e la ventola se `heat_fan = 1`) fino a quell'ora, poi torna alla logica normale. Lo scatto lo spegne come sempre per il tempo della foto | `heating_disabled` se `heating = 0` (forse non c'è la resistenza) |
-| `heater.cancel` | nessuno | toglie il boost | |
+| `heater.boost` | `duration_s` 300-3600 | scrive `/tmp/webcam/heater_boost_until`; `climate` tiene acceso il riscaldamento (e la ventola se `heat_fan = 1`) fino a quell'ora, poi torna alla logica normale. Lo scatto lo spegne come sempre per il tempo della foto | `heating_disabled` se `heating = 0` (forse non c'è la resistenza); `protection` se lo impediscono le protezioni del riscaldamento del router |
+| `heater.cancel` | nessuno | toglie il boost; `result` = `{ "was_active": true/false }` | |
 | `capture.now` | `upload` (booleano, predefinito `true`) | come il pulsante "Scatta ora" (`capture_now`), anche in manutenzione | `busy` se c'è uno scatto in corso; `rate_limited` se l'ultimo `capture.now` è di meno di 10 minuti fa |
 | `telemetry.flush` | nessuno | `telemetry_sample` e `telemetry_send` subito | `busy` se un invio è già in corso |
 | `config.set` | `key`, `value` (stringa) | `uci set webcam.@<sezione>[0].<opzione>=<valore>`, `uci commit`, evento `config.change` come dalla LuCI | `not_allowed` per una chiave fuori lista, `invalid_params` per un valore fuori intervallo |
@@ -212,8 +212,8 @@ Chiavi ammesse da `config.set` (lista scritta nel codice del router, non presa d
 |---|---|
 | `general.heating`, `general.heat_fan`, `general.maintenance_mode` | `0`, `1` |
 | `general.heat_dewpoint_margin` | 1-10 (°C, un decimale) |
-| `general.heat_hysteresis` | 0-5 |
-| `general.heat_min_temp` | -10 - 15 |
+| `general.heat_hysteresis` | 0-5 (°C, un decimale) |
+| `general.heat_min_temp` | da -10 a 15 (°C, un decimale) |
 | `shooting.photo_time_lapse` | 1-60 (minuti) |
 
 Fuori dalla lista, sempre: credenziali, token, URL (`portal_url`, `upload_server`, `update_url`...), porte seriali, `telemetry` (spegnerla taglierebbe il canale dei comandi), comandi di shell, riavvii, aggiornamenti. Per tutto il resto c'è l'accesso remoto con rttys.
@@ -223,7 +223,7 @@ Fuori dalla lista, sempre: credenziali, token, URL (`portal_url`, `upload_server
 1. Il router esegue i comandi nell'ordine ricevuto, **uno alla volta**, in background (la richiesta che li ha portati è già chiusa).
 2. Scadenza: un comando con `expires_at` passato (ora del router se sincronizzata, altrimenti `server_time` della risposta) **non** si esegue: `command.ack` con `status = expired`.
 3. Idempotenza: il router tiene gli `id` eseguiti negli ultimi 2 giorni (`/tmp/webcam/commands_done`, con l'esito). Un comando ricevuto di nuovo non si riesegue: si rimanda lo stesso `command.ack`. Dopo un riavvio la lista è vuota: rieseguire un `heater.boost`, `capture.now`, `config.set` o `telemetry.flush` non fa danni.
-4. Conferma: evento `command.ack` (`POST /api/v1/event`, subito, in coda se manca la rete) con `data.command_id`, `type`, `status` (`done`, `rejected`, `failed`, `expired`), `reason`, `result` (es. `{ "until": 1795014090 }` per il boost, `{ "file": "raw_20261118-1530.jpg" }` per lo scatto, `{ "key", "old", "new" }` per `config.set`). Anche la riga di log come per tutte le azioni.
+4. Conferma: evento `command.ack` (`POST /api/v1/event`, subito, in coda se manca la rete) con `data.command_id`, `type`, `status` (`done`, `rejected`, `failed`, `expired`), `reason`, `result` (es. `{ "until": 1795014090 }` per il boost, `{ "file": "raw_20261118-1530.jpg" }` per lo scatto, `{ "key", "old", "new" }` per `config.set`, `{ "was_active": true }` per `heater.cancel`). Anche la riga di log come per tutte le azioni.
 5. Il portal rimanda un comando in ogni risposta finché non riceve il `command.ack` o il comando scade (`commands.status`: `pending` → `delivered` → `done`/`rejected`/`failed`/`expired`). Al massimo 5 comandi per risposta, dal più vecchio.
 
 ### Sicurezza

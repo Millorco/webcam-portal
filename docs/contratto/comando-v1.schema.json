@@ -75,9 +75,9 @@
       "additionalProperties": false,
       "oneOf": [
         { "properties": { "key": { "enum": ["general.heating", "general.heat_fan", "general.maintenance_mode"] }, "value": { "enum": ["0", "1"] } } },
-        { "properties": { "key": { "const": "general.heat_dewpoint_margin" }, "value": { "pattern": "^([1-9]|10)(\\.[0-9])?$" } } },
-        { "properties": { "key": { "const": "general.heat_hysteresis" }, "value": { "pattern": "^[0-5](\\.[0-9])?$" } } },
-        { "properties": { "key": { "const": "general.heat_min_temp" }, "value": { "pattern": "^-?[0-9]{1,2}(\\.[0-9])?$" } } },
+        { "properties": { "key": { "const": "general.heat_dewpoint_margin" }, "value": { "description": "1-10 °C, un decimale", "pattern": "^(10(\\.0)?|[1-9](\\.[0-9])?)$" } } },
+        { "properties": { "key": { "const": "general.heat_hysteresis" }, "value": { "description": "0-5 °C, un decimale", "pattern": "^(5(\\.0)?|[0-4](\\.[0-9])?)$" } } },
+        { "properties": { "key": { "const": "general.heat_min_temp" }, "value": { "description": "da -10 a 15 °C, un decimale", "pattern": "^(-(10(\\.0)?|[0-9](\\.[0-9])?)|15(\\.0)?|1[0-4](\\.[0-9])?|[0-9](\\.[0-9])?)$" } } },
         { "properties": { "key": { "const": "shooting.photo_time_lapse" }, "value": { "pattern": "^([1-9]|[1-5][0-9]|60)$" } } }
       ]
     },
@@ -90,8 +90,8 @@
         "command_id": { "type": "string", "pattern": "^cmd-[0-9]{1,18}$" },
         "type": { "type": "string", "maxLength": 32 },
         "status": { "enum": ["done", "rejected", "failed", "expired"] },
-        "reason": { "description": "Con status diverso da done: unknown_type, invalid_params, not_allowed, heating_disabled, busy, maintenance, rate_limited, expired, error.", "type": ["string", "null"], "maxLength": 32 },
-        "result": { "description": "Esito del comando: heater.boost {until}, capture.now {file}, config.set {key, old, new}, telemetry.flush {sent}.", "type": ["object", "null"], "additionalProperties": true }
+        "reason": { "description": "Con status diverso da done: unknown_type, invalid_params, not_allowed, heating_disabled, protection (rifiutato dalle protezioni del riscaldamento del router, es. temperatura interna troppo alta), busy, maintenance, rate_limited, expired, error. Il portal accetta anche un reason sconosciuto.", "type": ["string", "null"], "maxLength": 32 },
+        "result": { "description": "Esito del comando: heater.boost {until}, heater.cancel {was_active: booleano, c'era un boost in corso}, capture.now {file}, config.set {key, old, new}, telemetry.flush {sent}.", "type": ["object", "null"], "additionalProperties": true }
       },
       "additionalProperties": true
     }
