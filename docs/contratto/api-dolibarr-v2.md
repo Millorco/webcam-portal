@@ -17,12 +17,12 @@ Due utenti API distinti, non amministratori:
 | Utente | Permessi | Usa |
 |---|---|---|
 | `webcam-router` (esiste) | Webcam → Leggere, Creare/modificare | `report` |
-| `webcam-portal` (nuovo) | Webcam → Leggere, **Sincronizzare dal portal** (nuovo); Agenda → creare eventi; Ticket → creare (se il modulo è attivo); Interventi → creare (se attivo); Soggetti terzi → leggere | tutti gli endpoint sotto |
+| `webcam-portal` (nuovo) | Webcam → Leggere, **Sincronizzare dal portal** (nuovo); Agenda → creare eventi; Ticket → creare (se il modulo è attivo); Interventi → creare (se attivo); Soggetti terzi → leggere e **Estendi l'accesso a tutti i terzi** (senza, i terzi dei clienti non sono visibili all'utente API) | tutti gli endpoint sotto |
 
 Nuovo permesso in `modWebcams.class.php`, dopo i tre esistenti:
 
 ```php
-$this->rights[$r][0] = $this->numero . sprintf("%02d", ($o * 10) + 4); // 51730004
+$this->rights[$r][0] = $this->numero . sprintf("%02d", ($o * 10) + 4); // 51730014 nel modulo 1.2 ($o = 1)
 $this->rights[$r][1] = 'Sync data from webcam-portal (counters, Victron, events, documents)';
 $this->rights[$r][4] = 'webcam';
 $this->rights[$r][5] = 'portal'; // $user->hasRight('webcams', 'webcam', 'portal')
@@ -85,7 +85,9 @@ Tutti sotto `/api/index.php/webcams/`. `{id}` è `llx_webcams_webcam.rowid` (il 
 
 ### `GET webcams/bymac/{mac}`
 
-Trova la webcam dal MAC (`aa:bb:cc:dd:ee:ff`), per collegare una webcam del portal alla scheda Dolibarr. Risposta: l'oggetto come `GET webcams/{id}` (stessa `_cleanObjectDatas`). `404` se non esiste.
+Trova la webcam dal MAC, per collegare una webcam del portal alla scheda Dolibarr. Risposta: l'oggetto come `GET webcams/{id}` (stessa `_cleanObjectDatas`). `404` se non esiste.
+
+Il WAF di Dolibarr rifiuta `:` nel percorso: il MAC va scritto **senza separatori, minuscolo** (`GET webcams/bymac/9483c412abcd`), oppure come parametro (`GET webcams/bymac?mac=94:83:c4:12:ab:cd`). webcam-portal usa la prima forma.
 
 ### `PUT webcams/{id}/portal`
 
@@ -142,7 +144,7 @@ Apre un **ticket** (modulo Ticket) per un guasto da seguire, collegato alla webc
   "type_code": "ISSUE", "severity_code": "HIGH", "category_code": "WEBCAM", "portal_event_id": 551240 }
 ```
 
-- Crea un `Ticket` con `fk_soc` del cliente della webcam, `origin_email` vuoto, `ref_ext` = `portal:<portal_event_id>` (idempotenza), e lo collega con `$ticket->add_object_linked('webcam@webcams', $id)`: compare nel riquadro "Oggetti collegati" della scheda webcam (`showLinkedObjectBlock`, già presente in `webcam_card.php`).
+- Crea un `Ticket` con `fk_soc` del cliente della webcam e `origin_email` vuoto. Il `Ticket` di Dolibarr non ha `ref_ext`: il riferimento `portal:<portal_event_id>` (idempotenza) è salvato in `extraparams` del ticket. Il ticket si collega con `$ticket->add_object_linked('webcam@webcams', $id)`: compare nel riquadro "Oggetti collegati" della scheda webcam (`showLinkedObjectBlock`, già presente in `webcam_card.php`).
 - `type_code`, `severity_code`, `category_code` devono esistere nei dizionari del Ticket; se mancano si usano i predefiniti del modulo Ticket.
 - `501` se il modulo Ticket non è attivo. Risposta `{ "ok": true, "ticket_id": 341, "ticket_ref": "TS2611-0042", "duplicate": false }`.
 
