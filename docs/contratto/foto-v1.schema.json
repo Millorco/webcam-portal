@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://viewlapse.com/schemas/contratto/foto-v1.schema.json",
+  "title": "Dati della foto (photo/1)",
+  "description": "File .json scritto da capture accanto a ogni foto. Estende il formato senza campo schema (photo/0) di luci-app-webcam 1.0-rc8: tutti i campi di photo/0 restano con lo stesso nome e significato.",
+  "type": "object",
+  "required": ["schema", "time", "time_synced", "mac", "file", "sha256", "size", "mode"],
+  "properties": {
+    "schema": { "const": "photo/1" },
+    "time": {
+      "description": "Istante dello scatto, secondi Unix UTC (photo/0).",
+      "type": "integer", "minimum": 0
+    },
+    "datetime": {
+      "description": "Stesso istante nell'ora locale del router, AAAA-MM-GGTHH:MM:SS+HHMM (photo/0).",
+      "type": ["string", "null"],
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}[+-]\\d{4}$"
+    },
+    "time_synced": {
+      "description": "true solo se al momento dello scatto esisteva /var/run/webcam_ntp_synced (ora sincronizzata con NTP dopo l'ultimo avvio).",
+      "type": "boolean"
+    },
+    "mac": {
+      "description": "MAC del router, minuscolo con i due punti: lo stesso di inventory_report.",
+      "type": "string", "pattern": "^([0-9a-f]{2}:){5}[0-9a-f]{2}$"
+    },
+    "hostname": { "type": ["string", "null"], "maxLength": 100 },
+    "camera": {
+      "description": "Nome della webcam (hostname del router) in photo/0. Mantenuto per compatibilità: non è il modello della fotocamera, che sta in camera_info.model.",
+      "type": ["string", "null"], "maxLength": 100
+    },
+    "file": {
+      "description": "Nome del file della foto, <prefisso>_AAAAMMGG-HHMM.jpg (photo/0).",
+      "type": "string", "pattern": "^[A-Za-z0-9._-]{1,200}\\.jpg$"
+    },
+    "sha256": {
+      "description": "SHA-256 del file JPEG, esadecimale minuscolo. Identifica la foto (idempotenza) e la certifica.",
+      "type": "string", "pattern": "^[0-9a-f]{64}$"
+    },
+    "size": { "description": "Dimensione del JPEG in byte.", "type": "integer", "minimum": 1 },
+    "mode": { "description": "Impostazioni usate (photo/0).", "enum": ["day", "night"] },
+    "special": {
+      "description": "Nome della fascia oraria speciale attiva, o null (photo/0).",
+      "type": ["string", "null"], "maxLength": 64
+    },
+    "interval": {
+      "description": "Intervallo di scatto in vigore, minuti.",
+      "type": ["integer", "null"], "minimum": 1
+    },
+    "settings": {
+      "description": "Etichette gphoto2 delle impostazioni richieste; null = lasciata quella della fotocamera (photo/0).",
+      "type": ["object", "null"],
+      "properties": {
+        "iso": { "type": ["string", "null"] },
+        "aperture": { "type": ["string", "null"] },
+        "shutterspeed": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "day_start": {
+      "description": "Inizio delle impostazioni diurne (alba + scostamento), secondi Unix, o null (photo/0).",
+      "type": ["integer", "null"]
+    },
+    "day_end": {
+      "description": "Fine delle impostazioni diurne (tramonto + scostamento), secondi Unix, o null (photo/0).",
+      "type": ["integer", "null"]
+    },
+    "lat": { "type": ["number", "null"], "minimum": -90, "maximum": 90 },
+    "lon": { "type": ["number", "null"], "minimum": -180, "maximum": 180 },
+    "app_version": { "type": ["string", "null"], "maxLength": 30 },
+    "board_fw": { "type": ["string", "null"], "maxLength": 30 },
+    "capture": {
+      "description": "Come è andato lo scatto.",
+      "type": ["object", "null"],
+      "properties": {
+        "attempts": { "type": "integer", "minimum": 1 },
+        "camera_power_cycled": { "type": "boolean" },
+        "duration_s": { "type": ["integer", "null"], "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "camera_info": {
+      "description": "Fotocamera, letta con gphoto2 quando costa poco (es. una volta l'ora). Facoltativo.",
+      "type": ["object", "null"],
+      "properties": {
+        "model": { "type": ["string", "null"], "maxLength": 150 },
+        "serial": { "type": ["string", "null"], "maxLength": 64 },
+        "firmware": { "type": ["string", "null"], "maxLength": 32 },
+        "lens": { "type": ["string", "null"], "maxLength": 100 },
+        "shutter_count": { "type": ["integer", "null"], "minimum": 0 },
+        "battery_level": { "type": ["string", "null"], "maxLength": 16 },
+        "read_at": { "type": ["integer", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "climate": {
+      "description": "Copia di /tmp/webcam/status.json scritto da climate, se più recente di 15 minuti, altrimenti null (photo/0).",
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "telemetria-v1.schema.json#/$defs/climate" }
+      ]
+    },
+    "power": {
+      "description": "Ultimo campione Victron (stesso oggetto della telemetria), se più recente di 15 minuti.",
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "telemetria-v1.schema.json#/$defs/power" }
+      ]
+    }
+  },
+  "additionalProperties": true
+}

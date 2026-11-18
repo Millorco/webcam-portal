@@ -1,0 +1,51 @@
+{
+  "schema": "event/1",
+  "mac": "94:83:c4:12:ab:cd",
+  "hostname": "monte-cavo",
+  "app_version": "1.1.0",
+  "sent_at": 1795012230,
+  "time_synced": true,
+  "events": [
+    {
+      "id": "3f2a9c1e-E1",
+      "time": 1794560141,
+      "time_synced": true,
+      "time_corrected": true,
+      "uptime": 41,
+      "type": "boot",
+      "severity": "notice",
+      "message": "Avvio del router (causa reset della scheda: watchdog)",
+      "data": {
+        "board_reset_cause": "watchdog",
+        "previous_uptime": 1296000
+      }
+    },
+    {
+      "id": "3f2a9c1e-E57",
+      "time": 1795011615,
+      "time_synced": true,
+      "uptime": 451515,
+      "type": "camera.power_cycle",
+      "severity": "warning",
+      "message": "primo tentativo di scatto fallito (errore di comunicazione USB con la fotocamera), riavvio la fotocamera e riprovo",
+      "data": {
+        "file": "raw_20261118-1520.jpg",
+        "gphoto2": "*** Error (-7: 'I/O problem') ***"
+      }
+    },
+    {
+      "id": "3f2a9c1e-E58",
+      "time": 1795011700,
+      "time_synced": true,
+      "uptime": 451600,
+      "type": "app.version_change",
+      "severity": "info",
+      "message": "luci-app-webcam 1.0-rc8 -> 1.1.0",
+      "data": {
+        "component": "app",
+        "from": "1.0-rc8",
+        "to": "1.1.0"
+      }
+    }
+  ]
+}

@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://viewlapse.com/schemas/contratto/telemetria-v1.schema.json",
+  "title": "Lotto di telemetria (telemetry/1)",
+  "description": "Corpo di POST /api/v1/telemetry: campioni presi ogni 5 minuti dal router, inviati a gruppi (di norma ogni 30 minuti) e tenuti in coda se manca la rete.",
+  "type": "object",
+  "required": ["schema", "mac", "sent_at", "time_synced", "samples"],
+  "properties": {
+    "schema": { "const": "telemetry/1" },
+    "mac": { "type": "string", "pattern": "^([0-9a-f]{2}:){5}[0-9a-f]{2}$" },
+    "hostname": { "type": ["string", "null"], "maxLength": 100 },
+    "app_version": { "type": ["string", "null"], "maxLength": 30 },
+    "board_fw": { "type": ["string", "null"], "maxLength": 30 },
+    "boot_id": {
+      "description": "Primi 8 caratteri esadecimali di /proc/sys/kernel/random/boot_id del boot in corso.",
+      "type": "string", "pattern": "^[0-9a-f]{8}$"
+    },
+    "sent_at": { "description": "Ora del router all'invio, secondi Unix UTC.", "type": "integer", "minimum": 0 },
+    "time_synced": { "description": "Ora del router sincronizzata con NTP al momento dell'invio.", "type": "boolean" },
+    "camera": { "oneOf": [ { "type": "null" }, { "$ref": "#/$defs/camera_counters" } ] },
+    "samples": {
+      "type": "array", "minItems": 1, "maxItems": 288,
+      "items": { "$ref": "#/$defs/sample" }
+    }
+  },
+  "additionalProperties": true,
+
+  "$defs": {
+    "sample": {
+      "type": "object",
+      "required": ["id", "time", "time_synced"],
+      "properties": {
+        "id": {
+          "description": "<boot_id>-<seq>: seq riparte da 1 a ogni avvio. Unico per webcam: serve all'idempotenza.",
+          "type": "string", "pattern": "^[0-9a-f]{8}-[0-9]{1,10}$"
+        },
+        "time": { "description": "Istante del campione, secondi Unix UTC.", "type": "integer", "minimum": 0 },
+        "time_synced": { "description": "true se l'ora era già sincronizzata con NTP o è stata corretta dopo (time_corrected).", "type": "boolean" },
+        "time_corrected": {
+          "description": "true se time è stato ricalcolato dopo la sincronizzazione NTP: time = ora_sync - (uptime_sync - uptime).",
+          "type": "boolean"
+        },
+        "uptime": { "description": "Secondi dall'avvio (/proc/uptime).", "type": ["integer", "null"], "minimum": 0 },
+        "climate": { "oneOf": [ { "type": "null" }, { "$ref": "#/$defs/climate" } ] },
+        "power": { "oneOf": [ { "type": "null" }, { "$ref": "#/$defs/power" } ] },
+        "net": { "oneOf": [ { "type": "null" }, { "$ref": "#/$defs/net" } ] },
+        "sys": { "oneOf": [ { "type": "null" }, { "$ref": "#/$defs/sys" } ] },
+        "camera": {
+          "type": ["object", "null"],
+          "properties": {
+            "present": { "description": "Fotocamera vista su USB all'ultimo controllo.", "type": ["boolean", "null"] },
+            "power": { "description": "Relè della fotocamera acceso.", "type": ["boolean", "null"] }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+
+    "climate": {
+      "description": "Lo stesso oggetto di /tmp/webcam/status.json (scritto da climate), con abs_humidity, abs_humidity_ext e fan in più. Temperature in °C anche se la LuCI mostra °F.",
+      "type": "object",
+      "properties": {
+        "time": { "type": ["integer", "null"] },
+        "sensor_ok": { "type": ["boolean", "null"] },
+        "temperature": { "type": ["number", "null"], "minimum": -80, "maximum": 150 },
+        "humidity": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
+        "dewpoint": { "type": ["number", "null"], "minimum": -100, "maximum": 150 },
+        "abs_humidity": { "description": "g/m3", "type": ["number", "null"], "minimum": 0, "maximum": 700 },
+        "ext_sensor": { "type": ["boolean", "null"] },
+        "ext_sensor_ok": { "type": ["boolean", "null"] },
+        "temperature_ext": { "type": ["number", "null"], "minimum": -80, "maximum": 150 },
+        "humidity_ext": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
+        "dewpoint_ext": { "type": ["number", "null"], "minimum": -100, "maximum": 150 },
+        "abs_humidity_ext": { "type": ["number", "null"], "minimum": 0, "maximum": 700 },
+        "heating_enabled": { "type": ["boolean", "null"] },
+        "heater": { "type": ["boolean", "null"] },
+        "fan": { "type": ["boolean", "null"] },
+        "board_fw": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+
+    "power": {
+      "description": "Regolatore Victron letto via VE.Direct (protocollo testo), già convertito in unità SI. Tutti i campi sono facoltativi: dipendono dal prodotto.",
+      "type": "object",
+      "properties": {
+        "time": { "type": ["integer", "null"] },
+        "source": { "enum": ["vedirect", "manual", null] },
+        "product_id": { "description": "PID, es. 0xA053", "type": ["string", "null"], "pattern": "^0x[0-9A-Fa-f]{4}$" },
+        "serial": { "description": "SER#", "type": ["string", "null"], "maxLength": 32 },
+        "firmware": { "description": "FW", "type": ["string", "null"], "maxLength": 16 },
+        "battery_v": { "description": "V / 1000", "type": ["number", "null"], "minimum": 0, "maximum": 100 },
+        "battery_a": { "description": "I / 1000, positiva in carica", "type": ["number", "null"], "minimum": -500, "maximum": 500 },
+        "panel_v": { "description": "VPV / 1000", "type": ["number", "null"], "minimum": 0, "maximum": 300 },
+        "panel_w": { "description": "PPV", "type": ["integer", "null"], "minimum": 0, "maximum": 10000 },
+        "load_a": { "description": "IL / 1000", "type": ["number", "null"], "minimum": 0, "maximum": 100 },
+        "load_on": { "description": "LOAD = ON", "type": ["boolean", "null"] },
+        "charge_state": { "description": "CS: 0 off, 2 fault, 3 bulk, 4 absorption, 5 float, 7 equalize, 245 starting, 252 external control", "type": ["integer", "null"], "minimum": 0, "maximum": 255 },
+        "mppt_state": { "description": "MPPT: 0 off, 1 limitato, 2 attivo", "type": ["integer", "null"], "minimum": 0, "maximum": 2 },
+        "off_reason": { "description": "OR, es. 0x00000000", "type": ["string", "null"] },
+        "error": { "description": "ERR: 0 nessun errore", "type": ["integer", "null"], "minimum": 0, "maximum": 255 },
+        "soc_pct": { "description": "SOC / 10 di BMV/SmartShunt; i soli MPPT non lo forniscono", "type": ["number", "null"], "minimum": 0, "maximum": 100 },
+        "yield_today_wh": { "description": "H20 x 10", "type": ["integer", "null"], "minimum": 0 },
+        "yield_total_wh": { "description": "H19 x 10", "type": ["integer", "null"], "minimum": 0 },
+        "max_power_today_w": { "description": "H21", "type": ["integer", "null"], "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+
+    "net": {
+      "description": "Connessione. I valori radio ci sono solo se il modem li espone (modem USB/QMI o router 4G interrogabile).",
+      "type": "object",
+      "properties": {
+        "iface": { "type": ["string", "null"], "maxLength": 16 },
+        "type": { "enum": ["lte", "nr", "umts", "gsm", "wan", "wifi", null] },
+        "operator": { "type": ["string", "null"], "maxLength": 32 },
+        "rssi_dbm": { "type": ["integer", "null"], "minimum": -150, "maximum": 0 },
+        "rsrp_dbm": { "type": ["integer", "null"], "minimum": -160, "maximum": 0 },
+        "rsrq_db": { "type": ["number", "null"], "minimum": -40, "maximum": 10 },
+        "sinr_db": { "type": ["number", "null"], "minimum": -30, "maximum": 50 },
+        "rx_bytes": { "description": "Contatore dell'interfaccia WAN dall'avvio", "type": ["integer", "null"], "minimum": 0 },
+        "tx_bytes": { "type": ["integer", "null"], "minimum": 0 },
+        "wan_ip": { "type": ["string", "null"], "maxLength": 45 },
+        "vpn_up": { "type": ["boolean", "null"] }
+      },
+      "additionalProperties": true
+    },
+
+    "sys": {
+      "type": "object",
+      "properties": {
+        "load1": { "type": ["number", "null"], "minimum": 0 },
+        "mem_free_kb": { "description": "MemAvailable", "type": ["integer", "null"], "minimum": 0 },
+        "tmp_free_kb": { "description": "spazio libero in /tmp (RAM)", "type": ["integer", "null"], "minimum": 0 },
+        "disk_free_kb": { "description": "spazio libero in /overlay, come inventory_report", "type": ["integer", "null"], "minimum": 0 },
+        "queue_photos": { "description": "foto nella coda di upload", "type": ["integer", "null"], "minimum": 0 },
+        "queue_kb": { "type": ["integer", "null"], "minimum": 0 },
+        "queue_samples": { "description": "campioni di telemetria in attesa", "type": ["integer", "null"], "minimum": 0 },
+        "maintenance": { "type": ["boolean", "null"] }
+      },
+      "additionalProperties": true
+    },
+
+    "camera_counters": {
+      "description": "Contatori della reflex al momento dell'invio. shutter_count viene dalla fotocamera se gphoto2 lo legge; gli altri sono tenuti dal router in /etc/webcam/counters (persistenti) e azzerati quando cambia il numero di serie.",
+      "type": "object",
+      "properties": {
+        "model": { "type": ["string", "null"], "maxLength": 150 },
+        "serial": { "type": ["string", "null"], "maxLength": 64 },
+        "shutter_count": { "type": ["integer", "null"], "minimum": 0 },
+        "shots_total": { "type": ["integer", "null"], "minimum": 0 },
+        "power_on_hours": { "type": ["number", "null"], "minimum": 0 },
+        "power_cycles": { "type": ["integer", "null"], "minimum": 0 },
+        "capture_errors": { "type": ["integer", "null"], "minimum": 0 },
+        "battery_level": { "type": ["string", "null"], "maxLength": 16 },
+        "read_at": { "type": ["integer", "null"] }
+      },
+      "additionalProperties": true
+    }
+  }
+}

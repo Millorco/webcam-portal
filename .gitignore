@@ -1,0 +1,22 @@
+# Configurazione locale e segreti
+.env
+config/config.local.php
+*.local.php
+
+# Dati ricevuti dai router
+storage/*
+!storage/.gitkeep
+
+# Dipendenze e cache
+vendor/
+node_modules/
+cache/
+*.log
+
+# Editor e sistema
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
