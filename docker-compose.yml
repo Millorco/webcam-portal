@@ -1,0 +1,31 @@
+# webcam-portal sul VPS, dietro Nginx Proxy Manager (rete esterna shared-network,
+# come webcam-rttys). MariaDB è quello già presente sul VPS: host in .env (DB_HOST).
+#
+#   cp .env.example .env    # e compila i valori
+#   docker compose up -d --build
+#   docker compose exec -u www-data portal php bin/install.php
+services:
+  portal:
+    build: .
+    image: webcam-portal:0.1
+    container_name: webcam-portal
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      STORAGE_DIR: /data
+      TRUST_PROXY: "true"
+    volumes:
+      - portal-data:/data
+    extra_hosts:
+      # per raggiungere MariaDB installato sull'host: DB_HOST=host.docker.internal
+      - "host.docker.internal:host-gateway"
+    networks:
+      - shared-network
+
+volumes:
+  portal-data:
+    name: webcam-portal-data
+
+networks:
+  shared-network:
+    external: true
