@@ -29,17 +29,21 @@ final class TelemetryApi
 		'net_type', 'operator', 'rssi_dbm', 'rsrp_dbm', 'rsrq_db', 'sinr_db', 'rx_bytes', 'tx_bytes', 'rx_delta', 'tx_delta',
 		'load1', 'mem_free_kb', 'tmp_free_kb', 'disk_free_kb', 'queue_photos', 'queue_kb', 'queue_samples',
 		'camera_present', 'camera_power', 'extra',
+		// contratto 1.1 (migrazione 002)
+		'heater_on_since', 'heater_duty_pct', 'heat_reason', 'heater_boost_until', 'dewpoint_margin', 'fan_rpm',
+		'cam_scheduled', 'cam_interval_min',
 	];
 
 	/** Campi di ogni oggetto del campione che hanno una colonna (il resto va in extra). */
 	private const MAPPED = [
 		'climate' => ['sensor_ok', 'temperature', 'humidity', 'dewpoint', 'abs_humidity', 'ext_sensor_ok',
-			'temperature_ext', 'humidity_ext', 'dewpoint_ext', 'abs_humidity_ext', 'heating_enabled', 'heater', 'fan'],
+			'temperature_ext', 'humidity_ext', 'dewpoint_ext', 'abs_humidity_ext', 'heating_enabled', 'heater', 'fan',
+			'heater_on_since', 'heater_duty_pct', 'heat_reason', 'heater_boost_until', 'dewpoint_margin', 'fan_rpm'],
 		'power' => ['battery_v', 'battery_a', 'panel_v', 'panel_w', 'load_a', 'load_on', 'charge_state', 'mppt_state',
 			'error', 'soc_pct', 'yield_today_wh', 'yield_total_wh'],
 		'net' => ['type', 'operator', 'rssi_dbm', 'rsrp_dbm', 'rsrq_db', 'sinr_db', 'rx_bytes', 'tx_bytes'],
 		'sys' => ['load1', 'mem_free_kb', 'tmp_free_kb', 'disk_free_kb', 'queue_photos', 'queue_kb', 'queue_samples'],
-		'camera' => ['present', 'power'],
+		'camera' => ['present', 'power', 'scheduled', 'interval_min'],
 	];
 
 	/** @return array{0:int, 1:array<string,mixed>} */
@@ -195,6 +199,13 @@ final class TelemetryApi
 			'heater' => V::bool($c, 'heater', $p),
 			'fan' => V::bool($c, 'fan', $p),
 			'board_fw' => V::str($c, 'board_fw', $p, 30),
+			// contratto 1.1, campi per la diagnosi
+			'heater_on_since' => V::int($c, 'heater_on_since', $p, 0),
+			'heater_duty_pct' => V::int($c, 'heater_duty_pct', $p, 0, 100),
+			'heat_reason' => V::enum($c, 'heat_reason', $p, ['dewpoint', 'min_temp', 'boost', 'capture', 'off']),
+			'heater_boost_until' => V::int($c, 'heater_boost_until', $p, 0),
+			'dewpoint_margin' => V::num($c, 'dewpoint_margin', $p, 0, 99),
+			'fan_rpm' => V::int($c, 'fan_rpm', $p, 0, 65535),
 		];
 	}
 
@@ -284,6 +295,8 @@ final class TelemetryApi
 		$k = $cm === null ? [] : [
 			'present' => V::bool($cm, 'present', 'camera.'),
 			'power' => V::bool($cm, 'power', 'camera.'),
+			'scheduled' => V::bool($cm, 'scheduled', 'camera.'),
+			'interval_min' => V::int($cm, 'interval_min', 'camera.', 0, 65535),
 		];
 
 		$clamp = static fn (?int $v, int $max): ?int => $v === null ? null : min($v, $max);
@@ -339,6 +352,14 @@ final class TelemetryApi
 			'camera_present' => V::b($k['present'] ?? null),
 			'camera_power' => V::b($k['power'] ?? null),
 			'extra' => self::extra($s),
+			'heater_on_since' => isset($c['heater_on_since']) && TimeWindow::ok($c['heater_on_since']) ? Db::dt($c['heater_on_since']) : null,
+			'heater_duty_pct' => $c['heater_duty_pct'] ?? null,
+			'heat_reason' => $c['heat_reason'] ?? null,
+			'heater_boost_until' => isset($c['heater_boost_until']) && $c['heater_boost_until'] < 4102444800 ? Db::dt($c['heater_boost_until']) : null,
+			'dewpoint_margin' => $c['dewpoint_margin'] ?? null,
+			'fan_rpm' => $c['fan_rpm'] ?? null,
+			'cam_scheduled' => V::b($k['scheduled'] ?? null),
+			'cam_interval_min' => $k['interval_min'] ?? null,
 		];
 		return $row;
 	}

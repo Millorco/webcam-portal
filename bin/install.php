@@ -35,7 +35,7 @@ $created = Partitions::ensure(2);
 Cli::out($created ? 'Partizioni create: ' . implode(', ', $created) : 'Partizioni dei prossimi mesi già presenti.');
 
 $storage = $cfg->storageDir();
-foreach (['photos', 'logs', 'sessions', 'ratelimit'] as $d) {
+foreach (['photos', 'logs', 'sessions', 'ratelimit', 'reference', 'cache'] as $d) {
 	if (!is_dir("$storage/$d") && !@mkdir("$storage/$d", 0775, true)) {
 		Cli::fail("Impossibile creare $storage/$d");
 	}
