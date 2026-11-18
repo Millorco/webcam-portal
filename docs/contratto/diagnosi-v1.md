@@ -25,7 +25,7 @@ Ogni apertura, aggravamento e chiusura scrive anche una riga in `events` (`sourc
 |---|---|---|
 | custodia, camera ferma, telemetria ferma, otturatore | ogni 5 minuti (cron), solo per le webcam con dati nuovi o con avvisi aperti | `bin/diagnose.php` |
 | foto (vetro, inquadratura) | dopo l'analisi delle foto nuove, ogni 5 minuti | `bin/photo-metrics.php`, poi le regole `glass.*`, `camera.moved` |
-| log | ogni 15 minuti, una sola query `stats_query` per tutte le webcam | `bin/diagnose.php --logs` |
+| log | ogni 15 minuti, una sola query `stats_query` per tutte le webcam (riavvii, errori e tentativi insieme, con `count() if`; un hostname che non compare vale 0) | `bin/diagnose.php --logs` |
 | disponibilità | ogni ora per il giorno in corso, alle 00:30 (fuso della webcam) il giorno chiuso, il 3 del mese il mese chiuso | `bin/availability.php` |
 
 Regole comuni a tutte le valutazioni:
@@ -169,9 +169,11 @@ Lavora sulle metriche delle foto (sotto, [Analisi delle foto](#analisi-delle-fot
 - **Ingresso**: eventi `camera.error`, `camera.missing`, `camera.power_cycle` del database e i conteggi di VictoriaLogs:
 
   ```logsql
-  _time:24h level:error ("fotocamera non trovata" OR "non è ricomparsa su USB" OR "scatto fallito") | stats by (hostname) count() errori
+  _time:24h level:error ("anche dopo il riavvio dalla scheda" OR "scatto fallito dopo il riavvio") | stats by (hostname) count() errori
   _time:24h "primo tentativo di scatto fallito" | stats by (hostname) count() tentativi
   ```
+
+  Si contano solo le righe **finali** di uno scatto fallito: luci-app-webcam scrive fino a tre righe `ERRORE` per un solo scatto fallito ("fotocamera non trovata su USB, provo a riaccenderla", "non è ricomparsa su USB", "... anche dopo il riavvio dalla scheda"), che con un filtro più largo basterebbero da sole per `open_errors`. Così una riga di log corrisponde a un evento `camera.error` o `camera.missing`.
 
   Errori: massimo tra eventi `camera.error`/`camera.missing` e righe di log. Tentativi: massimo tra `camera.power_cycle` e righe "primo tentativo".
 - **Apertura**: `open_errors` errori in 24 ore → agenda (warning). **Ticket** (error) con `ticket_errors` errori in 24 ore o almeno `open_errors` errori al giorno per 3 giorni di fila. Nota nel ticket (senza aprirlo) se i tentativi falliti superano `retry_warn` al giorno per 3 giorni: cavo USB o fotocamera che peggiorano.
@@ -180,7 +182,7 @@ Lavora sulle metriche delle foto (sotto, [Analisi delle foto](#analisi-delle-fot
 
 ### Log: webcam e hostname
 
-VictoriaLogs riconosce la webcam solo dal campo `hostname`. Il portal usa i log di una webcam solo se `webcams.hostname` è **unico** tra le webcam in servizio; altrimenti la regola vale `unknown` e il pannello mostra "hostname non univoco". L'hostname predefinito dei router è lo stesso per tutti: va impostato (per esempio uguale allo slug) all'installazione. Se VictoriaLogs non risponde entro 5 secondi le regole `logs.*` usano solo il database.
+VictoriaLogs riconosce la webcam solo dal campo `hostname`. Il portal usa i log di una webcam solo se `webcams.hostname` è **unico** tra le webcam in servizio; altrimenti la regola vale `unknown` e il pannello mostra "hostname non univoco". L'hostname predefinito dei router è lo stesso per tutti: va impostato all'installazione a `WC-<MAC>`, con il MAC maiuscolo e senza separatori, come il riferimento della scheda Dolibarr (`WC-9483C412ABCD`): luci-app-webcam 1.2.0 lo imposta da sé. Se VictoriaLogs non risponde entro 5 secondi le regole `logs.*` usano solo il database.
 
 ## Analisi delle foto
 
