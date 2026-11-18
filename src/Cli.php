@@ -46,6 +46,49 @@ final class Cli
 		return $out;
 	}
 
+	/**
+	 * Ora di riferimento da --now: Unix, oppure testo per strtotime (UTC).
+	 * Senza: adesso.
+	 */
+	public static function time(mixed $v): int
+	{
+		if (!is_string($v) || $v === '') {
+			return time();
+		}
+		if (ctype_digit($v)) {
+			return (int) $v;
+		}
+		$t = strtotime($v . (preg_match('/[a-z]/i', $v) ? '' : ' UTC'));
+		if ($t === false) {
+			self::fail("Ora non valida: $v");
+		}
+		return $t;
+	}
+
+	/**
+	 * Blocco esclusivo per gli script del cron (storage/cache/<nome>.lock):
+	 * null se un'altra esecuzione è in corso. Va tenuto in una variabile
+	 * finché lo script gira.
+	 *
+	 * @return resource|null
+	 */
+	public static function lock(string $name)
+	{
+		$dir = Config::get()->storageDir() . '/cache';
+		if (!is_dir($dir)) {
+			@mkdir($dir, 0775, true);
+		}
+		$fh = @fopen("$dir/$name.lock", 'c');
+		if ($fh === false) {
+			return STDIN; // senza cartella scrivibile si prosegue senza blocco
+		}
+		if (!flock($fh, LOCK_EX | LOCK_NB)) {
+			fclose($fh);
+			return null;
+		}
+		return $fh;
+	}
+
 	public static function out(string $msg): void
 	{
 		fwrite(STDOUT, $msg . PHP_EOL);
