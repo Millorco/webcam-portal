@@ -93,6 +93,7 @@ final class Alerts
 		]);
 		Db::exec('UPDATE alerts SET open_event_id = ? WHERE id = ?', [$eid, $id]);
 		Log::info("avviso $id " . ($reopened ? 'riaperto' : 'aperto') . " webcam=$wid regola={$rule->id()} gravità=$sev: $title", 'rules');
+		\WebcamPortal\Telegram\Notify::alert($id, true); // offline (bot Telegram, contratto 1.3)
 		return $id;
 	}
 
@@ -143,6 +144,7 @@ final class Alerts
 		$eid = self::event($c, $rule, (int) $alert['id'], 'alert.close', 'notice', (string) $alert['action'], $msg, ['reason' => $reason, 'note' => $note]);
 		Db::exec('UPDATE alerts SET close_event_id = ? WHERE id = ?', [$eid, $alert['id']]);
 		Log::info("avviso {$alert['id']} chiuso ($reason) webcam={$c->id()} regola={$rule->id()}", 'rules');
+		\WebcamPortal\Telegram\Notify::alert((int) $alert['id'], false); // online
 	}
 
 	/** Chiusura senza valutazione (operatore, fotocamera cambiata, webcam ritirata). */
