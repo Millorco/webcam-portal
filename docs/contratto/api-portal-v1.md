@@ -1,6 +1,6 @@
 # API del portal per i router: v1
 
-Versione del documento: **1.1** (contratto 1.1, compatibile con 1.0: si aggiungono il canale dei [comandi al router](#comandi-al-router), l'endpoint `GET /api/v1/commands`, l'evento `command.ack` e gli eventi degli avvisi del portal). Il percorso resta `/api/v1/`.
+Versione del documento: **1.2** (contratto 1.3): nessun cambio per i router; `current.jpg` può avere la [sovrimpressione](#sovrimpressione-su-currentjpg-contratto-13) del portal e c'è l'URL del webhook del bot Telegram. Versione 1.1 (contratto 1.1, compatibile con 1.0): il canale dei [comandi al router](#comandi-al-router), l'endpoint `GET /api/v1/commands`, l'evento `command.ack` e gli eventi degli avvisi del portal. Il percorso resta `/api/v1/`.
 
 Base: `https://<portal>/api/v1` (in anteprima su XAMPP: `http://localhost/webcam-portal/api/v1`). Solo HTTPS in produzione: il portal rifiuta HTTP con `403` salvo `APP_ENV=dev`.
 
@@ -13,6 +13,7 @@ Base: `https://<portal>/api/v1` (in anteprima su XAMPP: `http://localhost/webcam
 | `GET` | `/api/v1/commands` | router | comandi in attesa (1.1, [Comandi al router](#comandi-al-router)) |
 | `GET` | `/cam/{slug}/current.jpg` | pubblico | ultima foto |
 | `GET` | `/cam/{slug}/current.json` | pubblico | dati pubblici dell'ultima foto |
+| `POST` | `/telegram/webhook` | Telegram | 1.2: aggiornamenti del bot, con `X-Telegram-Bot-Api-Secret-Token` ([servizi-v1.md](servizi-v1.md#bot-telegram-o10)) |
 
 ## Autenticazione
 
@@ -244,7 +245,16 @@ Con il token e `X-Webcam-Features: commands/1`: `200` con `ok`, `server_time`, `
 - `Content-Type: image/jpeg`, `ETag: "<sha256>"`, `Last-Modified` = ora dello scatto, `Cache-Control: public, max-age=60`. Con `If-None-Match` uguale → `304`.
 - Redirect assente: l'URL è stabile, adatto a Windy, siti dei clienti e `<img>` incorporati.
 - `GET /cam/{slug}/current.json` (pubblico, stesse condizioni): `{ "slug", "name", "time", "datetime", "mode", "temperature_ext", "humidity_ext", "url": ".../current.jpg", "sha256" }` (niente MAC, IP, token o dati tecnici).
-- Miniature e archivio per giorno: dal contratto 1.2 nell'API dei siti ([api-siti-v1.md](api-siti-v1.md), `/api/site/v1/...` e `/img/...`). Time-lapse: in seguito.
+- Miniature e archivio per giorno: dal contratto 1.2 nell'API dei siti ([api-siti-v1.md](api-siti-v1.md), `/api/site/v1/...` e `/img/...`). Timelapse, foto del giorno e documenti: dal contratto 1.3, stessa API (`/media/...`).
+
+### Sovrimpressione su `current.jpg` (contratto 1.3)
+
+Con la funzione `overlay` attiva e `current` in `overlay_config.apply_to` ([servizi-v1.md](servizi-v1.md#sovrimpressione-m2-m12)):
+
+- `current.jpg` è la versione **ridotta a `current_size`** (predefinito 1920 px di lato lungo) **con la sovrimpressione**, non più l'originale; `current_size = orig` lascia l'originale senza sovrimpressione, come nella 1.0.
+- `ETag: "<sha256 della foto>-o<overlay_rev>"`: cambia anche quando cambia solo la sovrimpressione. `Last-Modified` resta l'ora dello scatto.
+- `current.json` ha in più `"overlay": true|false` e `width`/`height` dell'immagine servita; `sha256` resta quello dell'**originale** (l'immagine servita è derivata).
+- Ogni richiesta di `current.jpg` (anche `304`) conta nelle statistiche come fonte `image`.
 
 ## Compatibilità
 

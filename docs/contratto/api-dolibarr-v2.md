@@ -2,7 +2,9 @@
 
 Estensioni del modulo [dolibarr-webcams](https://github.com/Millorco/dolibarr-webcams) (oggi 1.1, endpoint `POST /api/index.php/webcams/report`). La v2 del contratto corrisponde al **modulo 1.2**: stessa classe `Webcams` in `class/api_webcams.class.php`, nuovi metodi con l'annotazione `@url` di Restler come quelli esistenti.
 
-Versione del documento: **2.1** (contratto 1.1) = **modulo 1.3**, compatibile con la 1.2: aggiunge le soglie del contratto di noleggio sulla webcam, `GET webcams/{id}/portal`, l'aggiornamento e la chiusura dei ticket, il registro della disponibilità mensile. Vedi [Diagnosi e disponibilità (modulo 1.3)](#diagnosi-e-disponibilità-modulo-13).
+Versione del documento: **2.2** (contratto 1.3) = **modulo 1.4**, compatibile con la 2.1 (modulo 1.3) e la 2.0 (modulo 1.2): aggiunge il livello di listino, le opzioni a pagamento (filmato finale, sponsor, certificato maltempo, rapporto mensile), l'archivio dopo il noleggio, il registro giornaliero delle impronte, il tipo di documento e l'invio per email al cliente con un modello di Dolibarr. Vedi [Listino e servizi (modulo 1.4)](#listino-e-servizi-modulo-14).
+
+Versione 2.1 (contratto 1.1) = modulo 1.3: soglie del contratto di noleggio sulla webcam, `GET webcams/{id}/portal`, aggiornamento e chiusura dei ticket, registro della disponibilità mensile. Vedi [Diagnosi e disponibilità (modulo 1.3)](#diagnosi-e-disponibilità-modulo-13).
 
 ## Principi
 
@@ -309,6 +311,221 @@ Registro della disponibilità mensile, calcolata dal portal ([diagnosi-v1.md](di
 - Risposta: `{ "ok": true, "id": 12, "period": "2026-11", "final": true, "updated": true }`.
 - `GET webcams/{id}/availability?from=2026-01&to=2026-12`: elenco dei mesi registrati, per il rapporto mensile e per i preventivi di rinnovo.
 
+## Listino e servizi (modulo 1.4)
+
+Aggiunte per la fase 3b (servizi in [servizi-v1.md](servizi-v1.md)). Dolibarr è la **fonte del contratto commerciale**: livello di listino, opzioni a pagamento, archivio dopo il noleggio, destinatari del rapporto. Il portal li legge con `GET webcams/{id}/portal` (al più una volta l'ora), produce i servizi, allega i PDF alla webcam e chiede a Dolibarr di mandarli per email. Nessun permesso nuovo: utente `webcam-portal`, permesso `webcam portal`.
+
+Come per le soglie `sla_*` (1.3), i campi stanno **sulla webcam**: descrivono il noleggio in corso. Quello che deve sopravvivere al passaggio della webcam a un altro cliente (l'archivio di chi l'ha avuta prima) sta in una tabella a parte per webcam e cliente.
+
+### Matrice livello → funzioni
+
+Fonte unica della matrice: questa tabella. Il portal la applica (`Features::forWebcam()`), Dolibarr la mostra come aiuto sulla scheda; i plugin leggono il risultato (`features` di [api-siti-v1.md](api-siti-v1.md#funzioni-e-listino)). Un livello vuoto vale `base`.
+
+| Funzione (id) | Cosa | base | standard | pro | Opzione che la accende a qualsiasi livello |
+|---|---|:-:|:-:|:-:|---|
+| — | ultima foto, `current.jpg`, Windy, pannello | ✓ | ✓ | ✓ | |
+| `archive` | archivio per giorno, misure esterne, confronto prima/dopo (API dei siti 1.2) | ✓ | ✓ | ✓ | |
+| `availability` | disponibilità del servizio nel pannello e nell'API (l'impegno resta `sla_enabled`) | ✓ | ✓ | ✓ | |
+| `overlay` | sovrimpressione di dati e logo del cliente (M2) | | ✓ | ✓ | |
+| `same_moment` | stesso momento in giorni diversi (M6) | | ✓ | ✓ | |
+| `timelapse` | timelapse automatici del giorno, della settimana e del mese, orizzontali (M7, O8) | | ✓ | ✓ | |
+| `photo_of_day` | foto del giorno, formati per i social (M11) | | ✓ | ✓ | |
+| `monthly_report` | rapporto mensile PDF (O3) | | ✓ | ✓ | |
+| `telegram` | bot Telegram per il cliente (O10) | | ✓ | ✓ | |
+| `timelapse_portrait` | timelapse verticali 1080 × 1920 (M7) | | | ✓ | |
+| `timelapse_custom` | timelapse di un periodo scelto dal cliente | | | ✓ | |
+| `stats` | statistiche di visualizzazione (M8) | | | ✓ | |
+| `sponsor` | sponsor e infopoint sull'immagine (M12) | | | ✓ | `sponsor_enabled` |
+| `weather_cert` | registro consultabile e certificato delle giornate di maltempo (O2) | | | ✓ | `opt_weather_cert` |
+| `final_film` | filmato finale a fine noleggio (M10) | | | | `film_option` = `auto` o `edited` |
+| (archivio dopo il noleggio) | accesso all'archivio dopo la fine del noleggio fino a una data (M13) | | | | riga in `llx_webcams_archive` |
+
+Regole:
+
+- `sponsor`: attiva con livello `pro` **o** `sponsor_enabled = 1`, e solo tra `sponsor_start` e `sponsor_end` (vuoti = senza limite). Spazi: `sponsor_slots`, vuoto = 2.
+- Le funzioni dicono cosa è venduto; se il server non sa produrre un servizio (senza `ffmpeg` niente timelapse nuovi, senza bot niente Telegram) il portal lo dice nel pannello e nell'API dei siti (`whoami.server`), senza cambiare le funzioni.
+- `report_enabled = 0` non toglie `monthly_report`: il PDF si fa e si allega, ma non si manda per email.
+- Un livello sconosciuto vale `base` (e il portal lo scrive nel suo log).
+
+### Campi del listino e delle opzioni
+
+File `sql/update_1.3-1.4.sql`, campi in `$fields` di `class/webcam.class.php` modificabili dalla scheda (blocco "Listino e servizi"), etichette in `langs/*/webcams.lang`. `film_status` e `film_url` li scrive solo il portal (`noteditable = 1`).
+
+```sql
+-- livello di listino (M4) e periodo del noleggio
+ALTER TABLE llx_webcams_webcam ADD COLUMN plan_level varchar(16) DEFAULT 'base' NOT NULL;  -- base, standard, pro
+ALTER TABLE llx_webcams_webcam ADD COLUMN plan_note varchar(255);                          -- es. "offerta 2026-118"
+ALTER TABLE llx_webcams_webcam ADD COLUMN rental_start date;
+ALTER TABLE llx_webcams_webcam ADD COLUMN rental_end date;                                 -- fine prevista: filmato finale
+-- pacchetto sponsor e infopoint (M12)
+ALTER TABLE llx_webcams_webcam ADD COLUMN sponsor_enabled smallint DEFAULT 0 NOT NULL;
+ALTER TABLE llx_webcams_webcam ADD COLUMN sponsor_slots smallint;                          -- vuoto = 2
+ALTER TABLE llx_webcams_webcam ADD COLUMN sponsor_start date;
+ALTER TABLE llx_webcams_webcam ADD COLUMN sponsor_end date;
+-- giornate di maltempo certificate (O2)
+ALTER TABLE llx_webcams_webcam ADD COLUMN opt_weather_cert smallint DEFAULT 0 NOT NULL;
+-- filmato finale (M10)
+ALTER TABLE llx_webcams_webcam ADD COLUMN film_option varchar(16);       -- vuoto, auto, edited
+ALTER TABLE llx_webcams_webcam ADD COLUMN film_format varchar(16);       -- landscape, portrait, both (vuoto = landscape)
+ALTER TABLE llx_webcams_webcam ADD COLUMN film_duration integer;         -- secondi obiettivo, vuoto = 60
+ALTER TABLE llx_webcams_webcam ADD COLUMN film_status varchar(16);       -- dal portal: queued, ready; delivered dall'operatore
+ALTER TABLE llx_webcams_webcam ADD COLUMN film_url varchar(255);         -- pagina del pannello del portal
+-- rapporto mensile (O3)
+ALTER TABLE llx_webcams_webcam ADD COLUMN report_enabled smallint DEFAULT 1 NOT NULL;     -- 1 = email al cliente
+ALTER TABLE llx_webcams_webcam ADD COLUMN report_email varchar(255);     -- destinatari separati da virgola; vuoto = email del terzo
+```
+
+`film_status = delivered` lo imposta l'operatore quando consegna il filmato montato; il portal non lo sovrascrive.
+
+### Archivio dopo il noleggio (M13)
+
+Tabella nuova (`sql/llx_webcams_archive.sql` e `.key.sql`), compilata nella scheda della webcam (riquadro "Archivi dopo il noleggio"): **per quale cliente** e **fino a quando** l'archivio di un noleggio finito resta visibile.
+
+```sql
+CREATE TABLE llx_webcams_archive (
+  rowid integer AUTO_INCREMENT PRIMARY KEY NOT NULL,
+  entity integer DEFAULT 1 NOT NULL,
+  fk_webcam integer NOT NULL,
+  fk_soc integer NOT NULL,               -- cliente del noleggio finito
+  rental_start date,                     -- vuoto = dall'inizio dell'assegnazione nel portal
+  rental_end date NOT NULL,
+  archive_until date NOT NULL,           -- incluso
+  note varchar(255),
+  fk_user_creat integer,
+  date_creation datetime NOT NULL,
+  tms timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=innodb;
+ALTER TABLE llx_webcams_archive ADD UNIQUE INDEX uk_webcams_archive (fk_webcam, fk_soc, rental_end);
+```
+
+- Quando l'operatore cambia il cliente di una webcam con l'opzione venduta, la scheda propone una riga con `rental_end` = oggi e `archive_until` vuoto da compilare.
+- Il portal abbina la riga all'assegnazione chiusa di `customer_webcams` con lo stesso cliente (`fk_soc` = `customers.dolibarr_socid`) e `valid_to` entro ±3 giorni da `rental_end`, e copia `archive_until`. Senza riga vale `archive.default_days` del portal (30 giorni) dalla fine dell'assegnazione.
+
+### `GET webcams/{id}/portal` (esteso)
+
+Tre oggetti in più nella risposta della 1.3 (gli altri campi restano uguali):
+
+```json
+{
+  "ok": true, "id": 12, "ref": "WC-9483C412ABCD", "status": 1,
+  "customer": { "id": 57, "name": "Impresa Rossi Costruzioni" },
+  "...": "portal, sla, shutter, rttys come nella 1.3",
+  "plan": { "level": "standard", "note": "offerta 2026-118",
+            "rental_start": "2026-09-01", "rental_end": "2027-03-31" },
+  "options": {
+    "sponsor": { "enabled": true, "slots": 3, "start": "2026-12-01", "end": "2027-04-30" },
+    "weather_cert": true,
+    "film": { "option": "auto", "format": "both", "duration_s": 60, "status": "", "url": "" },
+    "report": { "enabled": true, "recipients": ["direzione@impresa-rossi.it"] }
+  },
+  "archives": [ { "socid": 41, "rental_start": "2026-03-01", "rental_end": "2026-08-31", "archive_until": "2027-08-31" } ]
+}
+```
+
+- `plan.level`: sempre uno di `base`, `standard`, `pro` (vuoto o sconosciuto → `base`).
+- `options.sponsor.slots`: con i predefiniti applicati; `enabled` è `sponsor_enabled`, non dice se la funzione è attiva (lo dice la matrice).
+- `options.film.option`: `""`, `auto`, `edited`; `format` predefinito `landscape`, `duration_s` predefinito 60.
+- `options.report.recipients`: `report_email` diviso alle virgole e controllato con `isValidEmail()`, altrimenti l'email del terzo; `[]` se non c'è nessun indirizzo valido.
+- `archives`: tutte le righe di `llx_webcams_archive` della webcam con `archive_until` ≥ oggi.
+
+Un modulo 1.3 non manda questi oggetti: il portal allora tiene i valori impostati nel suo pannello (`webcam_service.source = portal`) o `base`.
+
+### `PUT webcams/{id}/portal` (esteso)
+
+Due campi facoltativi in più: `film_status` (`queued`, `ready`) e `film_url`. Un `film_status = delivered` già salvato non si sovrascrive (`ignored` nella risposta). Il passaggio a `ready` crea un evento in agenda "Filmato finale pronto".
+
+### `POST webcams/{id}/documents` (esteso)
+
+Campi nuovi facoltativi, per i documenti dei servizi (O2, O3):
+
+```json
+{ "filename": "rapporto-2026-11.pdf", "filecontent": "<base64>", "fileencoding": "base64", "overwrite": 0,
+  "description": "Rapporto mensile, novembre 2026", "sha256": "<sha256 del PDF>",
+  "doc_type": "monthly_report", "period": "2026-11", "portal_doc_id": "report:381",
+  "send_email": { "template": "report", "link": "https://cantiere.viewlapse.com/webcam/monte-cavo/" } }
+```
+
+| Campo | Significato |
+|---|---|
+| `doc_type` | `monthly_report`, `weather_certificate`, `weather_register` (elenco del registro, facoltativo), `other` (predefinito, come nella 1.2) |
+| `period` | `AAAA-MM` o `AAAA-MM-GG_AAAA-MM-GG` |
+| `portal_doc_id` | `report:<id>` o `certificate:<id>` del portal: idempotenza dell'email |
+| `send_email` | facoltativo: chiede a Dolibarr di mandare il PDF al cliente (sotto); senza, solo l'allegato |
+
+Nomi dei file: `rapporto-AAAA-MM.pdf`, `maltempo-AAAA-MM.pdf`, `maltempo-AAAA-MM-GG_AAAA-MM-GG.pdf` (certificato `custom`). Se un rapporto della stessa webcam e mese per un altro cliente esiste già (cambio di cliente a metà mese), il portal aggiunge `-<socid>` prima di `.pdf`. Il tipo e il periodo vanno nell'indice dei documenti (`ecm_files.keywords` = `webcams:<doc_type>:<period>`), così la scheda Documenti li filtra.
+
+**Email al cliente: la manda Dolibarr.** Il modulo ha già cliente, contatti e configurazione della posta (SMTP, firma, mittente); il portal non manda email ai clienti.
+
+- Modelli: il modulo aggiunge il tipo di modello `webcams_webcam` all'elenco dei modelli email (hook `emailElementlist` di `admin/mails_templates.php`) e, all'attivazione, crea due modelli modificabili: "Rapporto mensile webcam" e "Certificato giornate di maltempo". Le impostazioni del modulo `WEBCAMS_EMAIL_TEMPLATE_REPORT` e `WEBCAMS_EMAIL_TEMPLATE_WEATHER` scelgono quale modello usare; `send_email.template` vale `report` o `weather`.
+- Sostituzioni: quelle standard del terzo e della società (`getCommonSubstitutionArray()`, es. `__THIRDPARTY_NAME__`) più `__WEBCAM_REF__`, `__WEBCAM_LABEL__`, `__WEBCAM_PERIOD__` (es. "novembre 2026"), `__WEBCAM_LINK__` (`send_email.link`, vuoto se manca).
+- Destinatari: `options.report.recipients` (sopra); mittente `WEBCAMS_EMAIL_FROM`, altrimenti `MAIN_MAIL_EMAIL_FROM`. Allegato: il PDF appena salvato. Invio con `CMailFile`.
+- Traccia: evento in agenda di tipo `AC_OTH_AUTO`, codice `AC_WEBCAMS_SENTBYMAIL`, collegato alla webcam e al terzo, con oggetto, destinatari e nome del file; `ref_ext` = `portal:<portal_doc_id>`.
+- Idempotenza: se esiste già un evento con `ref_ext` = `portal:<portal_doc_id>`, l'email **non** si rimanda (`duplicate: true`), salvo `send_email.resend = 1` (rinvio a mano dal pannello).
+- Nessun destinatario o posta non configurata: il documento si salva lo stesso; `email.sent = false` con `reason` (`no_recipient`, `mail_error`, `template_missing`) e un evento in agenda "Email del rapporto non inviata" per l'operatore.
+
+Risposta:
+
+```json
+{ "ok": true, "id": 12, "file": "webcam/WC-9483C412ABCD/rapporto-2026-11.pdf",
+  "email": { "requested": true, "sent": true, "duplicate": false, "to": ["direzione@impresa-rossi.it"],
+             "actioncomm_id": 9001, "reason": null } }
+```
+
+Senza `send_email`, `email` è `null`. `409` (file esistente con `overwrite = 0`) arriva **prima** dell'email: nessuna email per un file non salvato.
+
+### `POST webcams/{id}/register`
+
+Registro giornaliero delle impronte (O2, [servizi-v1.md](servizi-v1.md#registro-daily_register)): il portal deposita ogni giorno, subito dopo il sigillo, l'hash dell'elenco delle foto. Dolibarr è il **secondo testimone**: salva l'hash con la sua ora e non lo cambia più.
+
+Tabella nuova (`sql/llx_webcams_register.sql` e `.key.sql`):
+
+```sql
+CREATE TABLE llx_webcams_register (
+  rowid integer AUTO_INCREMENT PRIMARY KEY NOT NULL,
+  entity integer DEFAULT 1 NOT NULL,
+  fk_webcam integer NOT NULL,
+  fk_soc integer,                         -- cliente della webcam al deposito
+  day date NOT NULL,                      -- giorno locale della webcam
+  timezone varchar(64) NOT NULL,
+  hash_scheme varchar(16) NOT NULL,       -- vlreg1
+  day_hash char(64) NOT NULL,
+  prev_day_hash char(64),
+  photos integer NOT NULL,
+  photos_unsynced integer DEFAULT 0 NOT NULL,
+  classification varchar(16),             -- ok, bad_weather, not_certifiable, no_data
+  reasons varchar(32),                    -- wet,frost,fog,dark
+  wet_hours smallint, frost_hours smallint, fog_hours smallint,
+  date_creation datetime NOT NULL         -- ora del deposito: è la prova
+) ENGINE=innodb;
+ALTER TABLE llx_webcams_register ADD UNIQUE INDEX uk_webcams_register (fk_webcam, day);
+```
+
+Nessuna colonna `tms` e nessun aggiornamento: le righe non si modificano dall'API né dalla scheda (solo lettura, scheda "Registro" della webcam).
+
+```json
+{ "days": [ { "day": "2026-11-18", "timezone": "Europe/Rome", "hash_scheme": "vlreg1",
+              "day_hash": "3b7e...64 hex", "prev_day_hash": "a01c...64 hex", "photos": 96, "photos_unsynced": 0,
+              "classification": "bad_weather", "reasons": "wet,dark", "wet_hours": 6, "frost_hours": 0, "fog_hours": 1 } ] }
+```
+
+- Da 1 a 31 giorni per chiamata (il portal recupera così i giorni rimasti indietro).
+- Per ogni giorno: nuovo → `created`; stessa riga con lo stesso `day_hash` → `duplicate`; stesso giorno con `day_hash` diverso → `conflict` (non si cambia nulla, evento in agenda `AC_WEBCAMS_REGISTER` "Registro: hash diverso per il 18/11/2026", da guardare).
+- `400` per un hash non di 64 caratteri esadecimali minuscoli o un giorno futuro.
+- Risposta (`200` anche con `conflict`):
+
+  ```json
+  { "ok": true, "id": 12, "results": [ { "day": "2026-11-18", "status": "created", "registered_at": 1795051800 } ] }
+  ```
+
+- `GET webcams/{id}/register?from=2026-11-01&to=2026-11-30`: le righe salvate, con `registered_at` (secondi Unix di `date_creation`): il certificato riporta l'ora del deposito di ogni giorno.
+
+### Cosa cambia nella scheda della webcam
+
+- Blocco "Listino e servizi" con livello, opzioni e periodo del noleggio, e sotto la matrice (in sola lettura) delle funzioni che ne risultano.
+- Riquadro "Archivi dopo il noleggio" (righe di `llx_webcams_archive`).
+- Scheda "Registro": giorni depositati, hash, classificazione.
+- Scheda Documenti: rapporti e certificati con il loro tipo (filtro su `ecm_files.keywords`).
+
 ## Riepilogo
 
 | Endpoint | Chiamato da | Permesso |
@@ -324,5 +541,9 @@ Registro della disponibilità mensile, calcolata dal portal ([diagnosi-v1.md](di
 | `GET webcams/{id}/portal` (1.3) | portal | `webcam portal` |
 | `PUT webcams/{id}/tickets/{ticket_id}` (1.3) | portal | `webcam portal` + ticket |
 | `POST webcams/{id}/availability`, `GET webcams/{id}/availability` (1.3) | portal | `webcam portal` |
+| `GET webcams/{id}/portal` (1.4: `plan`, `options`, `archives`) | portal | `webcam portal` |
+| `PUT webcams/{id}/portal` (1.4: `film_status`, `film_url`) | portal | `webcam portal` |
+| `POST webcams/{id}/documents` (1.4: `doc_type`, `period`, `send_email`) | portal | `webcam portal` |
+| `POST webcams/{id}/register`, `GET webcams/{id}/register` (1.4) | portal | `webcam portal` |
 
-Dolibarr richiesto: 20 o successivo, come oggi (`need_dolibarr_version`).
+Dolibarr richiesto: 20 o successivo, come oggi (`need_dolibarr_version`). I modelli email per tipo di oggetto (`emailElementlist`) esistono da Dolibarr 14.
