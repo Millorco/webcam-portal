@@ -35,7 +35,8 @@ $created = Partitions::ensure(2);
 Cli::out($created ? 'Partizioni create: ' . implode(', ', $created) : 'Partizioni dei prossimi mesi già presenti.');
 
 $storage = $cfg->storageDir();
-foreach (['photos', 'logs', 'sessions', 'ratelimit', 'reference', 'cache'] as $d) {
+// 0.4.0 (contratto 1.3): loghi, timelapse, PDF, registro delle impronte, blocchi e stato dei servizi
+foreach (['photos', 'logs', 'sessions', 'ratelimit', 'reference', 'cache', 'overlay', 'timelapse', 'reports', 'certificates', 'register', 'locks', 'state', 'tmp'] as $d) {
 	if (!is_dir("$storage/$d") && !@mkdir("$storage/$d", 0775, true)) {
 		Cli::fail("Impossibile creare $storage/$d");
 	}
