@@ -436,7 +436,11 @@ $q = (string) ($req[0]['post']['query'] ?? '');
 ok($rc === 0 && $req !== [] && $req[0]['path'] === '/select/logsql/stats_query' && $req[0]['auth'] === 'Basic ' . base64_encode('vl:vl-pass'), 'stats_query con Basic Auth', $out);
 ok(str_starts_with($q, '_time:24h') && str_contains($q, 'stats by (hostname)') && str_contains($q, 'count() if ("Linux version") avvii')
 	&& str_contains($q, '"anche dopo il riavvio dalla scheda" OR "scatto fallito dopo il riavvio"') && !str_contains($q, 'router.boot'), 'query di docs/query.md: count() if, solo le righe finali', $q);
-ok(count($req) === 2 && str_contains((string) $req[1]['post']['query'], '_time:[') , 'giorno UTC chiuso per log_counters', json_encode(array_column(array_column($req, 'post'), 'query')));
+$q1 = (string) ($req[1]['post']['query'] ?? '');
+$q2 = (string) ($req[2]['post']['query'] ?? '');
+ok(count($req) === 3 && str_starts_with($q1, '_time:[') && str_contains($q1, 'count() righe') && str_contains($q1, 'count() if ("upload fallito") upload_falliti')
+	&& str_contains($q1, 'count() if ("sensore" "non risponde") sensori') && str_contains($q2, 'stats by (hostname, _time:1h) count() righe | stats by (hostname) count() ore'),
+	'giorno UTC chiuso per log_counters: query 1 e 2 di servizi-v1.md', json_encode(array_column(array_column($req, 'post'), 'query')));
 $la = Db::all("SELECT rule_id, status FROM alerts WHERE webcam_id = ? ORDER BY rule_id", [$lid]);
 ok($la === [['rule_id' => 'logs.camera_errors', 'status' => 'open'], ['rule_id' => 'logs.reboots', 'status' => 'open']], 'avvisi logs.camera_errors e logs.reboots dai conteggi dei log', json_encode($la) . $out);
 $du = Db::all("SELECT state FROM rule_state WHERE webcam_id IN (?, ?) AND rule_id = 'logs.reboots'", [$dup1, $dup2]);

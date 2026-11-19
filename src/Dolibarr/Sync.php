@@ -8,6 +8,7 @@ use WebcamPortal\Config;
 use WebcamPortal\Db;
 use WebcamPortal\Log;
 use WebcamPortal\Service\Customers;
+use WebcamPortal\Service\Features;
 use WebcamPortal\Service\ServiceSettings;
 
 /**
@@ -107,6 +108,10 @@ final class Sync
 		if (is_array($info) && array_key_exists('customer', $info) && !$dryRun) {
 			$this->saveCustomer($w, $info['customer']);
 		}
+		// 1d. listino, opzioni e archivio dopo il noleggio (modulo 1.4)
+		if (is_array($info) && (isset($info['plan']) || isset($info['options']) || isset($info['archives'])) && !$dryRun) {
+			$this->savePlan($wid, $info);
+		}
 
 		// 2. contatori e Victron
 		$body = $this->countersBody($w);
@@ -177,6 +182,54 @@ final class Sync
 		}
 		if (isset($info['ref']) && is_string($info['ref'])) {
 			Db::exec('UPDATE webcams SET dolibarr_ref = ? WHERE id = ?', [substr($info['ref'], 0, 128), $wid]);
+		}
+	}
+
+	/**
+	 * plan/options/archives di GET webcams/{id}/portal (1.4) ->
+	 * webcam_service.plan_* e customer_webcams.archive_until. Un modulo 1.3
+	 * non li manda: restano i valori del pannello.
+	 */
+	private function savePlan(int $wid, array $info): void
+	{
+		if (isset($info['plan']) || isset($info['options'])) {
+			$plan = is_array($info['plan'] ?? null) ? $info['plan'] : [];
+			$level = in_array($plan['level'] ?? null, Features::LEVELS, true) ? (string) $plan['level'] : 'base';
+			$date = static fn ($v): ?string => is_string($v) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $v) ? $v : null;
+			$opt = is_array($info['options'] ?? null) ? $info['options'] : [];
+			Db::exec("INSERT IGNORE INTO webcam_service (webcam_id, source) VALUES (?, 'dolibarr')", [$wid]);
+			Db::exec(
+				'UPDATE webcam_service SET plan_level = ?, plan_options = ?, rental_start = ?, rental_end = ? WHERE webcam_id = ?',
+				[$level, json_encode($opt, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), $date($plan['rental_start'] ?? null), $date($plan['rental_end'] ?? null), $wid]
+			);
+			Features::reset();
+		}
+		if (!is_array($info['archives'] ?? null)) {
+			return;
+		}
+		$tz = ServiceSettings::tz((array) Db::one('SELECT timezone FROM webcams WHERE id = ?', [$wid]));
+		foreach ($info['archives'] as $a) {
+			if (!is_array($a) || !isset($a['socid'], $a['archive_until']) || !is_string($a['archive_until']) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $a['archive_until'])) {
+				continue;
+			}
+			$cust = Db::scalar('SELECT id FROM customers WHERE dolibarr_socid = ?', [(int) $a['socid']]);
+			if ($cust === null) {
+				continue;
+			}
+			// l'assegnazione chiusa con la fine più vicina a rental_end (entro 3 giorni)
+			$best = null;
+			foreach (Db::all('SELECT id, valid_to, archive_until, archive_source FROM customer_webcams WHERE webcam_id = ? AND customer_id = ? AND valid_to IS NOT NULL', [$wid, $cust]) as $cw) {
+				$end = (new \DateTimeImmutable('@' . Db::unix((string) $cw['valid_to'])))->setTimezone($tz);
+				$diff = isset($a['rental_end']) && is_string($a['rental_end']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $a['rental_end'])
+					? abs($end->getTimestamp() - (new \DateTimeImmutable($a['rental_end'] . ' 23:59:59', $tz))->getTimestamp()) : 0;
+				if ($diff <= 3 * 86400 + 86400 && ($best === null || $diff < $best[1])) {
+					$best = [$cw, $diff];
+				}
+			}
+			if ($best !== null && ($best[0]['archive_until'] !== $a['archive_until'] || $best[0]['archive_source'] !== 'dolibarr')) {
+				Db::exec("UPDATE customer_webcams SET archive_until = ?, archive_source = 'dolibarr' WHERE id = ?", [$a['archive_until'], $best[0]['id']]);
+				Log::info("webcam $wid: archivio del cliente $cust fino al {$a['archive_until']} (Dolibarr)", self::LOG);
+			}
 		}
 	}
 

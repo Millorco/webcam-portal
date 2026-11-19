@@ -87,6 +87,10 @@ final class Services
 		if ($client === null || $did === null) {
 			return;
 		}
+		$film = \WebcamPortal\Service\Features::plan((int) $w['id'])['options']['film'] ?? null;
+		if (is_array($film) && ($film['status'] ?? '') === 'delivered') {
+			return; // consegnato dall'operatore: il portal non lo sovrascrive
+		}
 		try {
 			$client->put("webcams/$did/portal", array_filter(['film_status' => $status, 'film_url' => $url], static fn ($v) => $v !== null));
 		} catch (DolibarrException $e) {

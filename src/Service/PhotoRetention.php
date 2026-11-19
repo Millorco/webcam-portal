@@ -25,7 +25,7 @@ final class PhotoRetention
 		foreach ($webcams as $w) {
 			$wid = (int) $w['id'];
 			$current = PhotoStore::current($wid);
-			$keepIds = array_filter([(int) $w['last_photo_id'], $current['photo_id'] ?? 0]);
+			$keepIds = array_merge(array_filter([(int) $w['last_photo_id'], $current['photo_id'] ?? 0]), self::certified($wid));
 			$st = Db::pdo()->prepare(
 				'SELECT id, taken_at, storage_path, size_bytes FROM photos
 				  WHERE webcam_id = ? AND taken_at < ? AND deleted_at IS NULL
@@ -74,5 +74,25 @@ final class PhotoRetention
 			}
 		}
 		return $stats;
+	}
+
+	/**
+	 * Foto mostrate nei certificati di maltempo emessi (servizi-v1.md,
+	 * "Retention"): gli originali restano.
+	 *
+	 * @return list<int>
+	 */
+	public static function certified(int $webcamId): array
+	{
+		$ids = [];
+		foreach (Db::all("SELECT JSON_EXTRACT(data, '$.photo_ids') AS ids FROM weather_certificates WHERE webcam_id = ? AND status IN ('ready','sent','emailed')", [$webcamId]) as $r) {
+			$l = json_decode((string) $r['ids'], true);
+			if (is_array($l)) {
+				foreach ($l as $id) {
+					$ids[] = (int) $id;
+				}
+			}
+		}
+		return array_values(array_unique($ids));
 	}
 }
