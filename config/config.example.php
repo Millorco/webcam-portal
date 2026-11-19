@@ -102,4 +102,23 @@ return [
 	// Disponibilità mensile anche nella pagina pubblica /cam/{slug}/ delle
 	// webcam pubbliche (solo la percentuale).                 AVAILABILITY_PUBLIC
 	'availability_public' => false,
+
+	// API in sola lettura per i siti (plugin WordPress), api-siti-v1.md.
+	'site_api' => [
+		'rate_limit_per_min' => 600,        // SITE_RATE_LIMIT_PER_MIN: per chiave (la chiave può averne uno suo)
+		'anon_rate_limit_per_min' => 120,   // SITE_ANON_RATE_LIMIT_PER_MIN: senza chiave, per indirizzo IP
+		'image_rate_limit_per_min' => 1200, // /img/..., per indirizzo IP
+		'cache_max_age' => 60,              // Cache-Control delle risposte JSON, secondi
+		// Segreto degli URL firmati delle immagini (HMAC). Vuoto = generato da
+		// sé in storage/keys/site-url.secret. Cambiarlo invalida gli URL già
+		// dati ai siti (si rigenerano alla richiesta successiva).  SITE_URL_SECRET
+		'url_secret' => '',
+		'image_url_ttl' => 7 * 86400,       // validità minima degli URL delle immagini, secondi
+		'image_url_step' => 86400,          // scadenza arrotondata: lo stesso URL per un giorno
+		'jpeg_quality' => 82,               // qualità delle riduzioni
+		// Riduzioni in storage/cache/img non usate da N giorni: cancellate da
+		// bin/retention-photos.php (si rifanno alla richiesta successiva).
+		'cache_days' => 30,                 // SITE_CACHE_DAYS
+		'series_max_days' => 400,           // intervallo massimo di /series
+	],
 ];

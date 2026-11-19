@@ -43,6 +43,10 @@ final class Config
 		'VICTORIALOGS_PASS' => 'victorialogs.pass',
 		'VICTORIALOGS_TIMEOUT' => 'victorialogs.timeout',
 		'AVAILABILITY_PUBLIC' => 'availability_public',
+		'SITE_RATE_LIMIT_PER_MIN' => 'site_api.rate_limit_per_min',
+		'SITE_ANON_RATE_LIMIT_PER_MIN' => 'site_api.anon_rate_limit_per_min',
+		'SITE_URL_SECRET' => 'site_api.url_secret',
+		'SITE_CACHE_DAYS' => 'site_api.cache_days',
 	];
 
 	/** @param array<string,mixed> $values */

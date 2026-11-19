@@ -13,6 +13,8 @@ use WebcamPortal\Api\TokenAuth;
 use WebcamPortal\Http\Request;
 use WebcamPortal\Http\Response;
 use WebcamPortal\Service\Commands;
+use WebcamPortal\Site\Images;
+use WebcamPortal\Site\SiteApi;
 use WebcamPortal\Web\PublicController;
 
 /**
@@ -26,6 +28,14 @@ final class App
 		$req = new Request($config);
 		$path = $req->path;
 
+		if ($path === '/api/site/v1' || str_starts_with($path, '/api/site/v1/')) {
+			SiteApi::handle($req);
+			return;
+		}
+		if (preg_match('#^/img/(\d{1,19})/(320|640|1280|1920|orig)\.jpg$#', $path, $m)) {
+			self::image($req, (int) $m[1], $m[2]);
+			return;
+		}
 		if (str_starts_with($path, '/api/')) {
 			self::api($req, $config);
 			return;
@@ -55,6 +65,19 @@ final class App
 		} catch (\Throwable $e) {
 			Log::error('errore pagina ' . $path . ': ' . get_class($e) . ' ' . $e->getMessage() . ' @' . $e->getFile() . ':' . $e->getLine());
 			Response::html(500, '<!doctype html><meta charset="utf-8"><title>Errore</title><p>Errore del server.</p>');
+		}
+	}
+
+	/** Foto ridotte con URL firmato (api-siti-v1.md, "Immagini"). */
+	private static function image(Request $req, int $photoId, string $size): void
+	{
+		try {
+			Images::serve($req, $photoId, $size);
+		} catch (ApiError $e) {
+			Response::json($e->status, ['ok' => false, 'error' => $e->error, 'message' => $e->getMessage()], $e->headers + ['Access-Control-Allow-Origin' => '*']);
+		} catch (\Throwable $e) {
+			Log::error("immagine $photoId/$size: " . get_class($e) . ' ' . $e->getMessage() . ' @' . $e->getFile() . ':' . $e->getLine(), 'site-api');
+			Response::json(500, ['ok' => false, 'error' => 'server_error', 'message' => 'Errore del server']);
 		}
 	}
 

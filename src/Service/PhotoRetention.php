@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace WebcamPortal\Service;
 
 use WebcamPortal\Db;
+use WebcamPortal\Site\Images;
 
 /**
  * Retention delle foto: gli originali più vecchi di N giorni (predefinito 90)
  * si cancellano dal disco tenendo una foto per ora (la prima dell'ora) per
  * webcam. Il record in photos resta (con deleted_at), così lo SHA-256 resta
- * disponibile per le certificazioni. current.jpg non si tocca mai.
+ * disponibile per le certificazioni. current.jpg non si tocca mai. Con la
+ * foto si tolgono le sue riduzioni in storage/cache/img (API dei siti).
  */
 final class PhotoRetention
 {
@@ -67,6 +69,7 @@ final class PhotoRetention
 					$stats['missing']++;
 				}
 				Db::exec('UPDATE photos SET deleted_at = UTC_TIMESTAMP() WHERE id = ?', [$p['id']]);
+				Images::forget($wid, (int) $p['id']); // riduzioni per i siti
 				$stats['deleted']++;
 			}
 		}
