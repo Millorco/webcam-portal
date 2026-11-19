@@ -244,7 +244,7 @@ Con il token e `X-Webcam-Features: commands/1`: `200` con `ok`, `server_time`, `
 - `Content-Type: image/jpeg`, `ETag: "<sha256>"`, `Last-Modified` = ora dello scatto, `Cache-Control: public, max-age=60`. Con `If-None-Match` uguale → `304`.
 - Redirect assente: l'URL è stabile, adatto a Windy, siti dei clienti e `<img>` incorporati.
 - `GET /cam/{slug}/current.json` (pubblico, stesse condizioni): `{ "slug", "name", "time", "datetime", "mode", "temperature_ext", "humidity_ext", "url": ".../current.jpg", "sha256" }` (niente MAC, IP, token o dati tecnici).
-- In seguito (non in v1): `current-1280.jpg` e simili per le miniature, archivio pubblico per giorno, time-lapse.
+- Miniature e archivio per giorno: dal contratto 1.2 nell'API dei siti ([api-siti-v1.md](api-siti-v1.md), `/api/site/v1/...` e `/img/...`). Time-lapse: in seguito.
 
 ## Compatibilità
 

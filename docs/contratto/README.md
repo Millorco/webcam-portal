@@ -2,7 +2,7 @@
 
 Formati e API comuni alle repository del progetto Viewlapse (noleggio di webcam time-lapse con router OpenWrt e reflex Canon). Ogni repository implementa la sua parte **rispettando questi file**; una modifica al contratto si fa qui prima che nel codice.
 
-**Versione del contratto: 1.1** (fase 2, assistenza automatica: diagnosi, comandi al router, disponibilità). È compatibile con la 1.0 della fase 1: aggiunge file, campi facoltativi, endpoint e tabelle, senza cambiare nulla di quello che esiste. I formati restano `photo/1`, `telemetry/1`, `event/1`; si aggiunge `command/1`.
+**Versione del contratto: 1.2** (fase 3, siti dei clienti in WordPress: API in sola lettura per i siti, clienti, chiavi dei siti, immagini ridotte firmate). È compatibile con la 1.1 e la 1.0: aggiunge file, endpoint e tabelle, senza cambiare nulla di quello che esiste. I formati restano `photo/1`, `telemetry/1`, `event/1`, `command/1`.
 
 | File | Contenuto |
 |---|---|
@@ -15,6 +15,8 @@ Formati e API comuni alle repository del progetto Viewlapse (noleggio di webcam 
 | [diagnosi-v1.md](diagnosi-v1.md) | 1.1: regole di diagnosi (custodia, camera ferma, vetro, inquadratura, otturatore, log), analisi delle foto, impegno di disponibilità |
 | [schema-mariadb.sql](schema-mariadb.sql) | Database del portal, migrazione 1 (MariaDB 11.8 sul VPS, 10.4+ in XAMPP) |
 | [schema-mariadb-002.sql](schema-mariadb-002.sql) | 1.1: migrazione 2 (avvisi, stato delle regole, comandi, metriche e riferimenti delle foto, conteggi dei log, disponibilità) |
+| [api-siti-v1.md](api-siti-v1.md) | 1.2: API in sola lettura per i siti (plugin WordPress "solo visualizzazione" e "portale clienti"): `GET /api/site/v1/...`, chiavi `vls_`, scope, CORS, URL firmati `/img/...` |
+| [schema-mariadb-003.sql](schema-mariadb-003.sql) | 1.2: migrazione 3 (campi dei clienti, storico delle assegnazioni webcam → cliente, chiavi dei siti) |
 
 ## Componenti
 
@@ -48,7 +50,8 @@ Formati e API comuni alle repository del progetto Viewlapse (noleggio di webcam 
 | avvisi, ticket per regola, disponibilità mensile (1.1) | webcam-portal | dolibarr-webcams 1.3 | API `webcams` (documento 2.1) |
 | soglie del contratto di noleggio, soglie dell'otturatore, link rttys (1.1) | dolibarr-webcams 1.3 | webcam-portal | `GET webcams/{id}/portal` |
 | conteggi di riavvii ed errori (1.1) | webcam-logserver (VictoriaLogs) | webcam-portal | API HTTP `stats_query`, sola lettura |
-| clienti, stato dei ticket | dolibarr-webcams / Dolibarr | webcam-portal | API Dolibarr (mai le tabelle) |
+| clienti, stato dei ticket | dolibarr-webcams / Dolibarr | webcam-portal | API Dolibarr (mai le tabelle); dalla 1.2 il cliente della webcam (`GET webcams/{id}/portal`) e il terzo (`GET thirdparties/{id}`) finiscono in `customers` |
+| webcam, archivio foto, misure esterne, confronti (1.2) | webcam-portal | plugin WordPress (repository a parte) | `GET /api/site/v1/...` con chiave `vls_` per cliente, immagini con URL firmati `/img/...` ([api-siti-v1.md](api-siti-v1.md)) |
 | comandi seriali, misure dei sensori | board.ino | luci-app-webcam (`serial`) | UART (invariato; fw 2.4 aggiunge eventuali comandi) |
 | log testuali | router (syslog) | webcam-logserver | syslog TCP (invariato) |
 | accesso remoto | — | operatori | webcam-vpn, webcam-rttys (invariati, nessun formato dati) |
@@ -59,6 +62,7 @@ Il log (VictoriaLogs) resta per leggere cosa è successo riga per riga; il datab
 
 - **MAC** della prima interfaccia fisica (`get_mac` di `inventory_report`), minuscolo con `:`. È la chiave comune: `llx_webcams_webcam.mac`, `webcams.mac` del portal, campo `mac` di ogni JSON.
 - **Token per webcam** per il portal (`wct_…`, solo l'hash nel database). La chiave API Dolibarr dell'utente `webcam-router` resta per `report`.
+- **Chiave per sito** (1.2): `vls_…` per cliente, solo l'hash nel database, con scope `public`/`client` e origini ammesse ([api-siti-v1.md](api-siti-v1.md)). Il cliente è il soggetto terzo di Dolibarr (`customers.dolibarr_socid`).
 - **slug** per gli URL pubblici (`/cam/monte-cavo/current.jpg`), scelto nel portal.
 - La **reflex** si identifica a parte con modello + numero di serie (tabella `cameras`), perché passa da una webcam all'altra tra un noleggio e l'altro.
 
@@ -77,8 +81,9 @@ Il log (VictoriaLogs) resta per leggere cosa è successo riga per riga; il datab
 - **Stessa versione**: si possono aggiungere campi facoltativi.
 - **Versione nuova** (`photo/2`): solo se un campo cambia significato o unità, sparisce o diventa obbligatorio. Il portal accetta tutte le versioni che conosce per almeno 12 mesi; il router scrive la più recente.
 - API: percorso versionato (`/api/v1/`). Il modulo Dolibarr non cambia percorso: `report` resta identico, gli endpoint nuovi si aggiungono (contratto Dolibarr v2 = modulo 1.2).
-- Database: tabella `schema_migrations`; ogni modifica è un file di migrazione numerato nel portal. Il contratto ne tiene una copia: `schema-mariadb.sql` = migrazione 1, `schema-mariadb-002.sql` = migrazione 2.
-- Contratto: versione `1.x` finché le aggiunte sono compatibili (1.1 = fase 2). I documenti riportano in testa la loro versione quando cambia.
+- Database: tabella `schema_migrations`; ogni modifica è un file di migrazione numerato nel portal. Il contratto ne tiene una copia: `schema-mariadb.sql` = migrazione 1, `schema-mariadb-002.sql` = migrazione 2, `schema-mariadb-003.sql` = migrazione 3.
+- API dei siti: percorso versionato a parte (`/api/site/v1/`), indipendente da quello dei router.
+- Contratto: versione `1.x` finché le aggiunte sono compatibili (1.1 = fase 2, 1.2 = fase 3). I documenti riportano in testa la loro versione quando cambia.
 - Gli schemi JSON hanno `$id` sotto `https://viewlapse.com/schemas/contratto/`: è un identificatore, non serve che l'URL sia raggiungibile.
 
 ## Versioni previste
@@ -102,6 +107,14 @@ Fase 2 (contratto 1.1, assistenza automatica):
 | webcam-portal | 0.2 | migrazione 002, regole di [diagnosi-v1.md](diagnosi-v1.md), analisi delle foto con GD, comandi al router, lettura dei log da VictoriaLogs, disponibilità giornaliera e mensile (pannello operatore e cliente), sincronizzazione di ticket e disponibilità con Dolibarr |
 | board.ino | — | nessun cambio necessario; un firmware futuro con tachimetro della ventola attiverebbe `fan_rpm` e la regola `enclosure.fan` |
 | webcam-logserver | — | nessun cambio: il portal usa le query di `docs/query.md` |
+
+Fase 3 (contratto 1.2, siti dei clienti in WordPress):
+
+| Repository | Versione | Cosa cambia |
+|---|---|---|
+| webcam-portal | 0.3 | migrazione 003, clienti importati da Dolibarr con lo storico delle assegnazioni, chiavi dei siti (pannello e `bin/site-key.php`), `GET /api/site/v1/...`, immagini ridotte con URL firmati e cache su disco |
+| plugin WordPress (repository nuova) | 1.0 | plugin "solo visualizzazione" per siti esterni e "portale clienti" per WordPress Multisite, client di [api-siti-v1.md](api-siti-v1.md) |
+| dolibarr-webcams | — | nessun cambio: il cliente arriva già da `GET webcams/{id}/portal` (1.3) |
 
 ## Punti da decidere
 
