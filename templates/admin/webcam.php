@@ -14,6 +14,7 @@ $cs = [0 => 'spento', 2 => 'guasto', 3 => 'bulk', 4 => 'absorption', 5 => 'float
 $publicUrl = $req->baseUrl() . '/cam/' . $w['slug'] . '/current.jpg';
 ?>
 <h1><?= View::e($w['name'] ?: $w['slug']) ?> <span class="muted small"><?= View::e($status[(int) $w['status']] ?? '') ?></span></h1>
+<p class="small"><a href="<?= View::e($req->url('/admin/webcams/' . (int) $w['id'] . '/services')) ?>">Servizi: listino, sovrimpressione, sponsor, timelapse, foto del giorno, statistiche, registro</a></p>
 
 <?php if ($newToken !== null): ?>
 <section class="card token">

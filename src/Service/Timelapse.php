@@ -36,6 +36,7 @@ final class Timelapse
 
 	public static function saveParams(int $webcamId, array $p): void
 	{
+		$p += self::params($webcamId); // le chiavi non passate (es. good) restano
 		$p['crop_x_pct'] = max(0, min(100, (int) ($p['crop_x_pct'] ?? 50)));
 		$p['crop_y_pct'] = max(0, min(100, (int) ($p['crop_y_pct'] ?? 50)));
 		$slt = (string) ($p['same_light_time'] ?? '12:00');

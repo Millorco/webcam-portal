@@ -19,12 +19,14 @@ use WebcamPortal\Web\View;
 /**
  * Pannello operatore (/admin/...): login, elenco webcam, scheda, creazione
  * webcam, rigenerazione del token; avvisi, comandi, riferimenti foto e
- * disponibilità in DiagnosisPages; clienti e chiavi dei siti in CustomerPages.
+ * disponibilità in DiagnosisPages; clienti e chiavi dei siti in CustomerPages;
+ * servizi (sovrimpressione, timelapse, rapporti, Telegram...) in ServicePages.
  */
 final class AdminController
 {
 	use DiagnosisPages;
 	use CustomerPages;
+	use ServicePages;
 
 	private ?array $user = null;
 
@@ -66,6 +68,9 @@ final class AdminController
 			return;
 		}
 		if ($this->customerRoutes($p, $m)) {
+			return;
+		}
+		if ($this->serviceRoutes($p, $m)) {
 			return;
 		}
 		if ($p === '/webcams/new') {
