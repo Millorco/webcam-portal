@@ -1,5 +1,5 @@
 <?php
-/** @var \WebcamPortal\Http\Request $req @var array $w @var ?array $data */
+/** @var \WebcamPortal\Http\Request $req @var array $w @var ?array $data @var ?array $avail */
 use WebcamPortal\Web\View;
 
 $name = $w['name'] ?: $w['slug'];
@@ -29,6 +29,7 @@ $img = $req->url('/cam/' . $w['slug'] . '/current.jpg');
 				<?php if ($data['humidity_ext'] !== null): ?> · umidità <?= View::num($data['humidity_ext'], 0, '%') ?><?php endif; ?>
 			</figcaption>
 		</figure>
+		<?php if (!empty($avail)): ?><p class="avail small">Disponibilità del servizio questo mese: <strong><?= View::num($avail['pct'], 1, '%') ?></strong></p><?php endif; ?>
 		<p class="muted small">Immagine fissa da incorporare: <code><?= View::e($data['url']) ?></code></p>
 	<?php endif; ?>
 </main>

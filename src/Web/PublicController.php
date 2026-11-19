@@ -116,6 +116,6 @@ final class PublicController
 			return;
 		}
 		$data = self::currentData($req, $w);
-		Response::html(200, View::render('public/cam', ['req' => $req, 'w' => $w, 'data' => $data]));
+		Response::html(200, View::render('public/cam', ['req' => $req, 'w' => $w, 'data' => $data, 'avail' => \WebcamPortal\Service\Availability::publicMonth($w)]));
 	}
 }

@@ -177,4 +177,14 @@ final class Availability
 		$this->stats['months']++;
 		return Db::one('SELECT * FROM availability_monthly WHERE webcam_id = ? AND month = ?', [$wid, $month]);
 	}
+
+	/** Disponibilità del mese per la pagina pubblica: solo con availability_public e webcam pubblica. */
+	public static function publicMonth(array $w): ?array
+	{
+		if (!\WebcamPortal\Config::get()->value('availability_public', false) || !$w['is_public']) {
+			return null;
+		}
+		$month = (new \DateTimeImmutable('now', ServiceSettings::tz($w)))->format('Y-m');
+		return Db::one('SELECT month, pct, final FROM availability_monthly WHERE webcam_id = ? AND month = ? AND pct IS NOT NULL', [$w['id'], $month]);
+	}
 }
