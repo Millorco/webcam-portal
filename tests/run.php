@@ -54,6 +54,8 @@ $cfgValues = [
 	'rate_limit_per_min' => 1000,
 	'public_base_url' => '',
 	'dolibarr' => ['url' => '', 'api_key' => ''],
+	// i test fanno molte richieste senza chiave dallo stesso indirizzo
+	'site_api' => ['anon_rate_limit_per_min' => 100000, 'image_rate_limit_per_min' => 100000],
 ];
 $writeCfg = static function (string $file, array $values): void {
 	file_put_contents($file, '<?php return ' . var_export($values, true) . ';');
@@ -73,11 +75,15 @@ $pdo->exec('SET FOREIGN_KEY_CHECKS = 1');
 Partitions::ensure(2);
 
 $procs = [];
-$startServer = static function (string $router, array $env, string $docroot) use (&$procs, $tmp): string {
+$startServer = static function (string $router, array $env, string $docroot, array $ini = []) use (&$procs, $tmp): string {
 	$sock = stream_socket_server('tcp://127.0.0.1:0');
 	$port = (int) substr((string) stream_socket_get_name($sock, false), strrpos((string) stream_socket_get_name($sock, false), ':') + 1);
 	fclose($sock);
-	$cmd = [PHP_BINARY, '-d', 'upload_max_filesize=2M', '-d', 'post_max_size=3M', '-S', "127.0.0.1:$port", '-t', $docroot, $router];
+	$cmd = [PHP_BINARY, '-d', 'upload_max_filesize=2M', '-d', 'post_max_size=3M'];
+	foreach ($ini as $k => $v) {
+		array_push($cmd, '-d', "$k=$v");
+	}
+	array_push($cmd, '-S', "127.0.0.1:$port", '-t', $docroot, $router);
 	$p = proc_open($cmd, [0 => ['pipe', 'r'], 1 => ['file', "$tmp/server-$port.log", 'a'], 2 => ['file', "$tmp/server-$port.log", 'a']], $pipes, null, $env + getenv());
 	$procs[] = $p;
 	for ($i = 0; $i < 50; $i++) {
@@ -654,6 +660,9 @@ ok((int) Db::scalar('SELECT COUNT(*) FROM measurements_hourly WHERE webcam_id = 
 
 // ------------------------------------------------------------ diagnosi (0.2)
 require __DIR__ . '/diagnosi.php';
+
+// ------------------------------------------------------------ API dei siti (0.3)
+require __DIR__ . '/siti.php';
 
 // ------------------------------------------------------------ errori del server
 section('Scritta sovrapposta e camera mossa');
