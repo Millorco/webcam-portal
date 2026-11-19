@@ -100,6 +100,20 @@ final class Webcams
 		if (Db::scalar('SELECT id FROM webcams WHERE slug = ? AND id <> ?', [$slug, $id]) !== null) {
 			throw new \InvalidArgumentException("Slug già usato: $slug");
 		}
+		$geo = [];
+		foreach (['latitude' => [-90, 90], 'longitude' => [-180, 180], 'altitude_m' => [-500, 9000]] as $k => [$lo, $hi]) {
+			if (!array_key_exists($k, $in)) {
+				continue;
+			}
+			$v = str_replace(',', '.', trim((string) $in[$k]));
+			if ($v !== '' && (!is_numeric($v) || (float) $v < $lo || (float) $v > $hi)) {
+				throw new \InvalidArgumentException("Valore non valido per $k: $v");
+			}
+			$geo[$k] = $v === '' ? null : ($k === 'altitude_m' ? (int) round((float) $v) : round((float) $v, 6));
+		}
+		if ($geo !== []) {
+			Db::exec('UPDATE webcams SET ' . implode(', ', array_map(static fn ($k) => "$k = ?", array_keys($geo))) . ' WHERE id = ?', array_merge(array_values($geo), [$id]));
+		}
 		$loc = trim((string) ($in['location'] ?? ''));
 		$windyId = trim((string) ($in['windy_id'] ?? ''));
 		Db::exec(

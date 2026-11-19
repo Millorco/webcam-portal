@@ -17,6 +17,7 @@ use WebcamPortal\Web\View;
 	<nav>
 		<a href="<?= View::e($req->url('/admin/')) ?>">Webcam</a>
 		<a href="<?= View::e($req->url('/admin/alerts')) ?>">Avvisi</a>
+		<a href="<?= View::e($req->url('/admin/customers')) ?>">Clienti</a>
 		<a href="<?= View::e($req->url('/admin/webcams/new')) ?>">Nuova webcam</a>
 		<form method="post" action="<?= View::e($req->url('/admin/logout')) ?>" class="inline">
 			<input type="hidden" name="_csrf" value="<?= View::e($csrf) ?>">

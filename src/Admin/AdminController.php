@@ -9,6 +9,7 @@ use WebcamPortal\Db;
 use WebcamPortal\Http\Request;
 use WebcamPortal\Http\Response;
 use WebcamPortal\Log;
+use WebcamPortal\Service\Customers;
 use WebcamPortal\Service\PhotoStore;
 use WebcamPortal\Service\Tokens;
 use WebcamPortal\Service\Webcams;
@@ -18,11 +19,12 @@ use WebcamPortal\Web\View;
 /**
  * Pannello operatore (/admin/...): login, elenco webcam, scheda, creazione
  * webcam, rigenerazione del token; avvisi, comandi, riferimenti foto e
- * disponibilità in DiagnosisPages.
+ * disponibilità in DiagnosisPages; clienti e chiavi dei siti in CustomerPages.
  */
 final class AdminController
 {
 	use DiagnosisPages;
+	use CustomerPages;
 
 	private ?array $user = null;
 
@@ -61,6 +63,9 @@ final class AdminController
 		}
 		if ($p === '/alerts') {
 			$this->alertsIndex();
+			return;
+		}
+		if ($this->customerRoutes($p, $m)) {
 			return;
 		}
 		if ($p === '/webcams/new') {
@@ -255,6 +260,7 @@ final class AdminController
 			'photosToday' => (int) Db::scalar('SELECT COUNT(*) FROM photos WHERE webcam_id = ? AND taken_at >= ?', [$id, Db::dt($from)]),
 			'newToken' => $newToken,
 			'timezones' => \DateTimeZone::listIdentifiers(),
+			'customers' => Db::all('SELECT id, name, active FROM customers ORDER BY name'),
 		] + $this->diagnosisVars($w));
 	}
 
@@ -292,6 +298,12 @@ final class AdminController
 	{
 		try {
 			Webcams::update((int) $w['id'], $_POST);
+			if (array_key_exists('customer_id', $_POST)) {
+				$cid = (int) $_POST['customer_id'];
+				if (Customers::assign((int) $w['id'], $cid > 0 ? $cid : null, 'portal', (int) $this->user['id'])) {
+					Log::info("webcam {$w['id']}: cliente " . ($cid > 0 ? $cid : 'tolto') . " da {$this->user['email']}");
+				}
+			}
 			$this->flash('ok', 'Webcam aggiornata.');
 		} catch (\InvalidArgumentException $e) {
 			$this->flash('error', $e->getMessage());

@@ -2,7 +2,7 @@
 /**
  * @var \WebcamPortal\Http\Request $req @var string $csrf @var array $w @var ?array $current @var ?array $lastPhoto
  * @var list<array> $recent @var list<string> $charts @var list<array> $events @var ?array $counters
- * @var list<array> $tokens @var int $photosToday @var ?string $newToken @var list<string> $timezones
+ * @var list<array> $tokens @var int $photosToday @var ?string $newToken @var list<string> $timezones @var list<array> $customers
  */
 use WebcamPortal\Web\View;
 
@@ -53,6 +53,8 @@ $publicUrl = $req->baseUrl() . '/cam/' . $w['slug'] . '/current.jpg';
 				· <?= View::num($counters['power_on_hours'], 1, 'h') ?> accesa · <?= View::e($counters['power_cycles'] ?? '—') ?> riavvii
 				· <?= View::e($counters['capture_errors'] ?? '—') ?> errori</td></tr>
 			<?php endif; ?>
+			<tr><th>Cliente</th><td><?php $cn = null; foreach ($customers as $c) { if ((int) $c['id'] === (int) $w['customer_id']) { $cn = $c; } } ?>
+				<?= $cn ? '<a href="' . View::e($req->url('/admin/customers/' . (int) $cn['id'])) . '">' . View::e($cn['name']) . '</a>' : '—' ?></td></tr>
 			<tr><th>Dolibarr</th><td><?= $w['dolibarr_id'] ? View::e(($w['dolibarr_ref'] ?: '') . ' (id ' . $w['dolibarr_id'] . ')') : '—' ?></td></tr>
 		</table>
 	</section>
@@ -125,6 +127,15 @@ $publicUrl = $req->baseUrl() . '/cam/' . $w['slug'] . '/current.jpg';
 		<label>Nome <input name="name" value="<?= View::e($w['name']) ?>" required></label>
 		<label>Slug <input name="slug" value="<?= View::e($w['slug']) ?>" required pattern="[a-z0-9][a-z0-9-]{0,63}"></label>
 		<label>Località <input name="location" value="<?= View::e($w['location']) ?>"></label>
+		<label>Latitudine <input name="latitude" value="<?= View::e($w['latitude']) ?>" inputmode="decimal" placeholder="41.751"></label>
+		<label>Longitudine <input name="longitude" value="<?= View::e($w['longitude']) ?>" inputmode="decimal" placeholder="12.708"></label>
+		<label>Altitudine (m) <input name="altitude_m" value="<?= View::e($w['altitude_m']) ?>" inputmode="numeric"></label>
+		<label>Cliente
+			<select name="customer_id">
+				<option value="0">— nessuno —</option>
+				<?php foreach ($customers as $c): ?><option value="<?= (int) $c['id'] ?>" <?= (int) $w['customer_id'] === (int) $c['id'] ? 'selected' : '' ?>><?= View::e($c['name']) ?><?= $c['active'] ? '' : ' (disattivato)' ?></option><?php endforeach; ?>
+			</select>
+			<span class="small muted">Con Dolibarr 1.3 il cliente arriva dalla scheda della webcam a ogni sincronizzazione. Il cliente nuovo vede solo le foto da oggi.</span></label>
 		<label>Fuso orario <input name="timezone" value="<?= View::e($tz) ?>" required></label>
 		<label>Stato
 			<select name="status">
