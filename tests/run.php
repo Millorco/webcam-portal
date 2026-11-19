@@ -652,6 +652,9 @@ exec(str_replace('--giorni 1', '--una-volta', $cmd), $out, $rc);
 ok($rc === 0 && http('GET', "$base/cam/seconda/current.jpg")['status'] === 200, 'simulatore --una-volta e current.jpg', implode("\n", array_slice($out, -5)));
 ok((int) Db::scalar('SELECT COUNT(*) FROM measurements_hourly WHERE webcam_id = ? AND samples > 0', [$wid2]) >= 24, 'medie orarie dal simulatore');
 
+// ------------------------------------------------------------ diagnosi (0.2)
+require __DIR__ . '/diagnosi.php';
+
 // ------------------------------------------------------------ errori del server
 section('Log');
 $logs = '';
