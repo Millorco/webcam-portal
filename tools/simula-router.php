@@ -317,6 +317,9 @@ final class RouterSimulato
 		$rhExt = max(20.0, min(99.0, $ahExt * (273.15 + $tExt) / 216.7 / self::satVapour($tExt) * 100 + self::noise(0.8)));
 
 		// dentro la custodia: più caldo (sole, riscaldamento), umidità assoluta quasi ferma se stagna
+		if ($this->scenario === 'riscaldamento') {
+			$cloud = 0.1; // custodia umida con cielo coperto: il sole non scalda la custodia
+		}
 		$sunGain = $this->faulty('sole', $t) ? 19.0 * $sun : 6.0 * $sun * $cloud;
 		$tBase = $tExt + 2.5 + $sunGain + self::noise(0.1);
 		$this->ahIn ??= 5.2;
