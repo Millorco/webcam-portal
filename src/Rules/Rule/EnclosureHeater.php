@@ -92,6 +92,9 @@ final class EnclosureHeater extends Rule
 				if ($s1['heat_reason'] !== 'capture' && (int) $s1['heater'] === 1) {
 					$margin = $s1['dewpoint_margin'] !== null ? (float) $s1['dewpoint_margin'] : $c->f('default_margin');
 					$spread = (float) $s1['t_in'] - (float) $s1['dp_in'];
+					// aumento dall'inizio del ciclo (accensione), non dall'inizio della finestra: in un ciclo
+					// lungo la custodia già calda non sale più, ma non è un guasto
+					$s0 = $run[0];
 					$ext = $s0['t_ext'] !== null && $s1['t_ext'] !== null && (int) $s0['ext_sensor_ok'] === 1 && (int) $s1['ext_sensor_ok'] === 1;
 					$d0 = (float) $s0['t_in'] - ($ext ? (float) $s0['t_ext'] : 0.0);
 					$d1 = (float) $s1['t_in'] - ($ext ? (float) $s1['t_ext'] : 0.0);
