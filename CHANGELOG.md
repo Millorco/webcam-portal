@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.4.0 - 2026-11-19
+
+Fase 3b di Webcam 2.0 (servizi), secondo il contratto dei dati 1.3 (`servizi-v1.md`, API dei siti 1.1, API Dolibarr 2.2).
+
+- Migrazione 004 (`migrations/004_servizi.sql`, MariaDB 10.4): piano e funzioni, sovrimpressione, sponsor, punteggi, timelapse, foto del giorno, statistiche, registro, rapporti, certificati, Telegram, nuove colonne di `log_counters`.
+- Funzioni per webcam dal piano Dolibarr (modulo 1.4: `plan`, `options`, `archives`), webcam archiviate fino a `archive_until`; `film_status` `delivered` impostato dall'operatore non si sovrascrive.
+- M2 sovrimpressione con GD sulle riduzioni e su `current.jpg` (originale intatto, ETag con la revisione); M12 sponsor e infopoint con periodo.
+- O8 punteggio delle foto buone (`bin/photo-scores.php`).
+- M7 timelapse giorno/settimana/mese, periodo scelto e filmato finale, orizzontali e verticali (`bin/timelapse.php`); ffmpeg facoltativo (`ffmpeg.path`, `FFMPEG_PATH`): senza, la funzione è spenta con un messaggio chiaro e `whoami.server` lo dice. Il container Docker installa ffmpeg.
+- M6 stesso momento in giorni diversi; M11 foto del giorno automatica (`photo_of_day.time`, predefinito 45 minuti dopo il tramonto) o scelta a mano fino alle 23:59 del giorno dopo (`bin/photo-of-day.php`).
+- M8 statistiche: richieste di `current.jpg`, beacon `/views` e `views.gif`, visitatori unici con impronta salata del giorno (nessun IP in chiaro, sali cancellati dopo 48 ore) (`bin/stats.php`).
+- O2 registro delle impronte SHA-256 a catena (`vlreg1`, foto in ritardo, deposito in Dolibarr, `bin/register.php --verifica`), giornate di maltempo e certificato PDF; O3 rapporto mensile PDF (`bin/reports.php`). Generatore PDF in PHP (`src/Pdf/Pdf.php`); invio a Dolibarr con `documents` (doppione = inviato, `send_email`); conteggi dei log dal logserver (riavvii, invii FTP falliti) con l'elenco dei dati mancanti se non risponde; la retention tiene le foto dei certificati.
+- O10 bot Telegram via webhook (`POST /telegram/webhook`) o polling, codici di abbinamento, avvisi foto del giorno e gelo, ore di silenzio; token solo in `config.php` o `TELEGRAM_BOT_TOKEN` (`bin/telegram.php`).
+- API dei siti 1.1: `same-moment`, `timelapses`, `photo-of-day`, `photos-of-day`, `overlay-items`, `stats`, `reports`, `weather-days`, `certificates`, campi `features`, `overlay`, `beacon`, `archive_until`, `whoami.server`, errori `feature_unavailable` e `scope_client_required`; file firmati `/media/...` (video con Range, documenti con scadenza di un giorno).
+- VictoriaLogs: conteggi giornalieri del giorno UTC chiuso (con nuovi tentativi fino a 3 giorni) per i rapporti.
+- Pannello: *Servizi* della webcam, *Rapporti*, *Telegram*.
+- Test della fase 3b in `tests/servizi.php`; finto Dolibarr 1.4 e finto Telegram.
+
 ## 0.3.0 - 2026-11-19
 
 Fase 3 di Webcam 2.0 (siti dei clienti in WordPress), secondo il contratto dei dati 1.2.

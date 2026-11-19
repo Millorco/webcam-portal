@@ -9,9 +9,9 @@ Portale di Webcam 2.0 (Viewlapse): riceve dai router con [luci-app-webcam](https
 
 ## Contratto dei dati
 
-Formati JSON, API e schema del database comuni a tutte le repository: [docs/contratto/](docs/contratto/README.md). Le API implementate sono esattamente quelle di [api-portal-v1.md](docs/contratto/api-portal-v1.md). Il portal 0.2 implementa il contratto 1.1 (fase 2: [diagnosi](docs/contratto/diagnosi-v1.md), comandi al router, disponibilità, migrazione [002](docs/contratto/schema-mariadb-002.sql)); la 0.3 il contratto 1.2 (fase 3: [API dei siti](docs/contratto/api-siti-v1.md), migrazione [003](docs/contratto/schema-mariadb-003.sql)).
+Formati JSON, API e schema del database comuni a tutte le repository: [docs/contratto/](docs/contratto/README.md). Le API implementate sono esattamente quelle di [api-portal-v1.md](docs/contratto/api-portal-v1.md). Il portal 0.2 implementa il contratto 1.1 (fase 2: [diagnosi](docs/contratto/diagnosi-v1.md), comandi al router, disponibilità, migrazione [002](docs/contratto/schema-mariadb-002.sql)); la 0.3 il contratto 1.2 (fase 3: [API dei siti](docs/contratto/api-siti-v1.md), migrazione [003](docs/contratto/schema-mariadb-003.sql)); la 0.4 il contratto 1.3 (fase 3b: [servizi](docs/contratto/servizi-v1.md), API dei siti 1.1, API Dolibarr 2.2, migrazione [004](docs/contratto/schema-mariadb-004.sql)).
 
-## Cosa fa (versione 0.3)
+## Cosa fa (versione 0.4)
 
 | Funzione | Dove |
 |---|---|
@@ -47,6 +47,21 @@ Fase 3 (siti dei clienti in WordPress, 0.3):
 | Chiavi API dei siti `vls_...` per cliente (solo SHA-256 nel database), scope `public` (webcam pubbliche) o `client` (tutte le webcam del cliente), origini ammesse per CORS, limite al minuto per chiave | `src/Service/SiteKeys.php`, pannello *Clienti*, `bin/site-key.php` |
 | `GET /api/site/v1/whoami`, `webcams`, `webcams/{slug}`, `.../photos?date=`, `.../days?month=`, `.../series?from&to&fields=`, `.../compare?a=&b=`; senza chiave le sole webcam pubbliche | `src/Site/SiteApi.php` |
 | Foto ridotte `/img/{id}/{320,640,1280,1920,orig}.jpg?e=&s=` con firma HMAC e scadenza, generate con GD una alla volta e tenute in `storage/cache/img/` (ETag, `Cache-Control` fino alla scadenza); originale solo per lo scope `client` | `src/Site/Images.php` |
+
+Fase 3b (servizi a pagamento, 0.4), secondo [servizi-v1.md](docs/contratto/servizi-v1.md):
+
+| Funzione | Dove |
+|---|---|
+| Funzioni per webcam dal piano Dolibarr (`base`, `standard`, `pro` + opzioni, `GET webcams/{id}/portal`), webcam archiviate fino a `archive_until` (solo archivio, timelapse, foto del giorno, rapporti) | `src/Service/Features.php`, `src/Dolibarr/Sync.php` |
+| M2 sovrimpressione con GD (dati meteo, logo, sponsor e infopoint di M12) sulle riduzioni e su `current.jpg`; l'originale non si tocca; ETag `<sha>-o<rev>` | `src/Overlay/`, `src/Web/PublicController.php` |
+| O8 punteggio delle foto buone (nitidezza, luminosità, meteo) | `bin/photo-scores.php`, `src/Service/PhotoScores.php` |
+| M7 timelapse giorno/settimana/mese (e periodo scelto, filmato finale), orizzontali e verticali, con ffmpeg | `bin/timelapse.php`, `src/Service/Timelapse.php`, `Ffmpeg.php` |
+| M6 stesso momento in giorni diversi; M11 foto del giorno (automatica dopo il tramonto o scelta a mano fino alle 23:59 del giorno dopo) | `src/Site/SiteApi.php`, `bin/photo-of-day.php` |
+| M8 statistiche di visualizzazione: `current.jpg`, beacon `/views` e `views.gif` (token `vb1`), visitatori unici con impronta giornaliera salata, nessun IP in chiaro | `bin/stats.php`, `src/Service/Stats.php` |
+| O2 registro delle impronte SHA-256 a catena (elenco `vlreg1`, foto in ritardo), giornate di maltempo e certificato PDF; O3 rapporto mensile PDF; PDF generati in PHP; invio a Dolibarr (`documents`, `register`) | `bin/register.php`, `bin/reports.php`, `src/Pdf/Pdf.php`, `src/Service/Register.php`, `Reports.php` |
+| O10 bot Telegram (webhook o polling, codici di abbinamento, avvisi foto del giorno e gelo, ore di silenzio) | `bin/telegram.php`, `src/Telegram/`, `POST /telegram/webhook` |
+| API dei siti 1.1: `same-moment`, `timelapses`, `photo-of-day`, `photos-of-day`, `overlay-items`, `stats`, `reports`, `weather-days`, `certificates`; `features`, `overlay`, `beacon`, `archive_until` nelle webcam; `whoami.server`; file firmati `/media/{tl,tlp,logo,rep,cert,reg}/...` (video con Range) | `src/Site/SiteApi.php`, `src/Site/Media.php` |
+| Pannello: *Servizi* della webcam (piano, sovrimpressione, logo, sponsor, timelapse, foto del giorno, statistiche), *Rapporti* (rapporti e certificati, rigenera, invia) e *Telegram* | `src/Admin/ServicePages.php`, `templates/admin/` |
 
 ## API per i siti (WordPress)
 
@@ -193,8 +208,15 @@ NPM manda `X-Forwarded-Proto: https`: con `TRUST_PROXY=true` (predefinito nel co
 | `bin/availability.php` | ogni ora, al minuto 20 | disponibilità di oggi e dei 7 giorni prima, mesi provvisori e definitivi (`--webcam`, `--dal`, `--al`, `--now`) |
 | `bin/aggregate-hourly.php` | ogni ora, al minuto 5 | ricalcola le medie orarie delle ultime 3 ore (`--ore N`, `--dal AAAA-MM-GG --al ...`) |
 | `bin/sync-dolibarr.php` | ogni ora, al minuto 15 | invia a Dolibarr contatori, Victron, URL `current.jpg`, eventi in agenda, disponibilità; legge le soglie `sla_*` e il cliente della webcam; ticket; riprova gli endpoint mancanti |
+| `bin/photo-scores.php` | ogni 5 minuti | punteggio delle foto nuove (`--webcam`, `--now`) |
+| `bin/timelapse.php` | ogni 10 minuti | crea i timelapse automatici (giorno alle 01:00 locali, settimana il lunedì, mese il 2, filmato finale) ed esegue un lavoro dalla coda (`--tutti`, `--stato`, `--richiedi`) |
+| `bin/photo-of-day.php` | ogni 15 minuti | foto del giorno di oggi e di ieri all'ora `photo_of_day.time` (`--scegli FOTO --webcam ID`) |
+| `bin/register.php` | ogni ora, al minuto 40 | sigilla i giorni chiusi (dalle 01:30 locali), foto in ritardo, deposito in Dolibarr (`--verifica`) |
+| `bin/reports.php` | ogni ora, al minuto 45 | dal giorno `reports.day` alle `reports.time`: rapporti mensili e certificati, invio a Dolibarr (`--certificato`, `--rigenera`) |
+| `bin/stats.php` | ogni ora, al minuto 50 | somma le visualizzazioni, cancella impronte e sali dopo 48 ore, sponsor che entrano o escono |
+| `bin/telegram.php` | ogni minuto | coda dei messaggi, avviso gelo; con `telegram.mode = poll` anche `getUpdates` |
 | `bin/partitions.php` | ogni giorno alle 03:10 | crea le partizioni dei prossimi 2 mesi, cancella quelle oltre 12 mesi (`--prova`, `--elenco`) |
-| `bin/retention-photos.php` | ogni giorno alle 03:30 | originali oltre 90 giorni: tiene una foto l'ora; cache delle riduzioni per i siti non usate da 30 giorni (`--giorni N`, `--cache-giorni N`, `--prova`) |
+| `bin/retention-photos.php` | ogni giorno alle 03:30 | originali oltre 90 giorni: tiene una foto l'ora; cache delle riduzioni per i siti non usate da 30 giorni, timelapse scaduti, loghi non usati; tiene le foto dei certificati (`--giorni N`, `--cache-giorni N`, `--prova`) |
 
 I risultati finiscono in `storage/logs/cron.log`, `rules.log`, `photo-metrics.log`, `availability.log` e `sync-dolibarr.log`. `rules.php` e `photo-metrics.php` hanno un lucchetto: se un giro è ancora in corso il successivo salta.
 
@@ -210,6 +232,13 @@ I risultati finiscono in `storage/logs/cron.log`, `rules.log`, `photo-metrics.lo
 15 * * * *  docker exec -u www-data webcam-portal php bin/sync-dolibarr.php   >/dev/null 2>&1
 10 3 * * *  docker exec -u www-data webcam-portal php bin/partitions.php      >/dev/null
 30 3 * * *  docker exec -u www-data webcam-portal php bin/retention-photos.php >/dev/null
+1-59/5 * * * * docker exec -u www-data webcam-portal php bin/photo-scores.php >/dev/null 2>&1
+*/10 * * * * docker exec -u www-data webcam-portal php bin/timelapse.php     >/dev/null 2>&1
+7-59/15 * * * * docker exec -u www-data webcam-portal php bin/photo-of-day.php >/dev/null 2>&1
+40 * * * *  docker exec -u www-data webcam-portal php bin/register.php       >/dev/null 2>&1
+45 * * * *  docker exec -u www-data webcam-portal php bin/reports.php        >/dev/null 2>&1
+50 * * * *  docker exec -u www-data webcam-portal php bin/stats.php          >/dev/null
+* * * * *   docker exec -u www-data webcam-portal php bin/telegram.php       >/dev/null 2>&1
 ```
 
 Senza Docker: `5 * * * * cd /opt/webcam-portal && php bin/aggregate-hourly.php`, e così via.
@@ -233,6 +262,20 @@ schtasks /Create /TN "webcam-portal metriche foto" /SC MINUTE /MO 5 ^
   /TR "C:\xampp\php\php.exe C:\xampp\htdocs\webcam-portal\bin\photo-metrics.php"
 schtasks /Create /TN "webcam-portal disponibilita" /SC HOURLY /MO 1 /ST 00:20 ^
   /TR "C:\xampp\php\php.exe C:\xampp\htdocs\webcam-portal\bin\availability.php"
+schtasks /Create /TN "webcam-portal punteggi" /SC MINUTE /MO 5 ^
+  /TR "C:\xampp\php\php.exe C:\xampp\htdocs\webcam-portal\bin\photo-scores.php"
+schtasks /Create /TN "webcam-portal timelapse" /SC MINUTE /MO 10 ^
+  /TR "C:\xampp\php\php.exe C:\xampp\htdocs\webcam-portal\bin\timelapse.php"
+schtasks /Create /TN "webcam-portal foto del giorno" /SC MINUTE /MO 15 ^
+  /TR "C:\xampp\php\php.exe C:\xampp\htdocs\webcam-portal\bin\photo-of-day.php"
+schtasks /Create /TN "webcam-portal registro" /SC HOURLY /MO 1 /ST 00:40 ^
+  /TR "C:\xampp\php\php.exe C:\xampp\htdocs\webcam-portal\bin\register.php"
+schtasks /Create /TN "webcam-portal rapporti" /SC HOURLY /MO 1 /ST 00:45 ^
+  /TR "C:\xampp\php\php.exe C:\xampp\htdocs\webcam-portal\bin\reports.php"
+schtasks /Create /TN "webcam-portal statistiche" /SC HOURLY /MO 1 /ST 00:50 ^
+  /TR "C:\xampp\php\php.exe C:\xampp\htdocs\webcam-portal\bin\stats.php"
+schtasks /Create /TN "webcam-portal telegram" /SC MINUTE /MO 1 ^
+  /TR "C:\xampp\php\php.exe C:\xampp\htdocs\webcam-portal\bin\telegram.php"
 ```
 
 Oppure dall'interfaccia: *Utilità di pianificazione → Crea attività di base*, programma `C:\xampp\php\php.exe`, argomento il percorso dello script, "Inizia da" `C:\xampp\htdocs\webcam-portal`.
@@ -269,6 +312,16 @@ Con il modulo 1.3, a ogni giro:
 - VictoriaLogs ([webcam-logserver](https://github.com/Millorco/webcam-logserver), `docs/query.md`): in `config.php` `victorialogs.url` (es. `http://victorialogs:9428`), `user`, `pass`, `timeout` (5 s), o le variabili `VICTORIALOGS_URL`, `VICTORIALOGS_USER`, `VICTORIALOGS_PASS`, `VICTORIALOGS_TIMEOUT`. Vuoto = spento: le regole `logs.*` usano solo gli eventi. Una sola `stats_query` ogni 15 minuti per tutte le webcam, legate per `webcams.hostname` (`WC-<MAC>`); un hostname senza righe vale 0, uno usato da due webcam dà "dati insufficienti".
 - Disponibilità pubblica: con `availability_public = true` (variabile `AVAILABILITY_PUBLIC`) la pagina `/cam/{slug}/` delle webcam pubbliche mostra la disponibilità del mese.
 
+## Servizi (0.4)
+
+- **Funzioni**: arrivano dal piano della scheda Dolibarr (`plan`, `options`, `archives` di `GET webcams/{id}/portal`, modulo 1.4) con `sync-dolibarr.php`; la tabella in `src/Service/Features.php`. Senza Dolibarr si impostano nel pannello (*Servizi* della webcam). Una webcam a fine noleggio resta archiviata fino a `archive_until` (`archive.default_days`, 30): i siti vedono solo l'archivio e i documenti.
+- **ffmpeg** (solo timelapse): facoltativo. `ffmpeg.path` in `config.php` (o `FFMPEG_PATH`): vuoto = `ffmpeg` nel `PATH`, un percorso assoluto (su Windows es. `C:\ffmpeg\bin\ffmpeg.exe`, da https://www.gyan.dev/ffmpeg/builds/), `off` = spento. Il container Docker lo installa. Senza ffmpeg i timelapse sono spenti: il pannello lo dice, `whoami.server.timelapse` è `false` con il motivo, i lavori in coda finiscono in `failed` con `ffmpeg_missing`. Prova: `php bin/timelapse.php --stato`.
+- **Sovrimpressione**: si disegna con GD sulle riduzioni e su `current.jpg` servito (mai sull'originale); font TrueType in `overlay.font` e `overlay.font_bold` (vuoto = `assets/fonts/DejaVuSans.ttf`). Ogni cambio alza la revisione e quindi l'ETag.
+- **Statistiche**: l'IP non si salva mai: si usa un'impronta HMAC-SHA256 (sale casuale del giorno, IP accorciato, user agent, webcam) per contare i visitatori unici, cancellata con il sale dopo 48 ore (`bin/stats.php`).
+- **Rapporti e certificati**: PDF generati dal portal (`src/Pdf/Pdf.php`, nessuna libreria esterna), allegati alla scheda Dolibarr con `POST webcams/{id}/documents` (un doppione vale come inviato) e, con `send_email`, mandati al cliente da Dolibarr. I conteggi dei log (riavvii, invii FTP falliti) vengono dal logserver: se non risponde, il rapporto scrive quali dati mancano. Rigenerare un rapporto non rimanda l'email (`--rigenera ... --email` per rimandarla).
+- **Registro**: ogni giorno chiuso ha un elenco `vlreg1` delle impronte delle foto e un `day_hash` a catena col giorno prima, depositato in Dolibarr (`POST webcams/{id}/register`); `php bin/register.php --verifica` ricontrolla elenchi e catena. Le foto usate in un certificato non si cancellano con la retention.
+- **Telegram**: crea il bot con @BotFather e metti il token in `telegram.bot_token` o `TELEGRAM_BOT_TOKEN` (mai nel codice o nei log). Sul VPS `telegram.mode = 'webhook'`, un `webhook_secret` casuale e `php bin/telegram.php --set-webhook https://portal.viewlapse.com/telegram/webhook`; su XAMPP `mode = 'poll'`. Il cliente si abbona con il codice creato nel pannello *Telegram* o con `php bin/telegram.php --codice --cliente ID`.
+
 ## Test
 
 `tests/run.php` (senza PHPUnit) ricrea lo schema in un database di prova (il nome deve finire con `_test`), avvia il portal con `php -S` e un finto Dolibarr (moduli 1.1, 1.2 e 1.3), e prova autenticazione, foto (idempotenza, SHA-256, limiti, `photo/0`), `current.jpg`/`current.json`/304, telemetria (idempotenza, validazione per campione, gzip, limiti, eventi del portal), eventi, limite di frequenza, medie orarie, partizioni, retention, sincronizzazione Dolibarr, pannello e simulatore.
@@ -276,6 +329,8 @@ Con il modulo 1.3, a ogni giro:
 `tests/diagnosi.php` (incluso da `run.php`) prova la fase 2: per ogni scenario del simulatore (`guarnizione`, `riscaldamento`, `sole`, `vetro-appannato`, `vetro-sporco`, `camera-mossa`, `camera-ferma`) una webcam nuova riceve giorni di storico con il guasto e poi la riparazione; metriche foto e regole girano ora per ora con l'ora finta, e l'avviso deve aprirsi durante il guasto e chiudersi da solo dopo. Poi una webcam sana senza avvisi, comandi (consegna solo con intestazione e scope, ack dal simulatore, scadenza, validazione, pulsanti del pannello), metriche (memoria insufficiente), pagina Avvisi, disponibilità, ticket con i finti Dolibarr 1.2 e 1.3 e VictoriaLogs con un finto server. Dura qualche minuto.
 
 `tests/siti.php` (incluso da `run.php`) prova la fase 3: clienti e storico delle assegnazioni, chiavi (formato, solo hash, scope, revoca, scadenza, cliente disattivato, limite al minuto), CORS (origini esatte e `*.`, preliminare `OPTIONS`, 403 dal browser), tutti gli endpoint con i loro errori, nessun dato interno nelle risposte, URL firmati (dimensione, foto e scadenza non modificabili), riduzioni a 320/640/1280/1920 e originale, cache su disco con ETag/304, foto da 24 MP con poca memoria (`503`), pulizia della cache, cambio di cliente, pannello, `bin/site-key.php` e import dei clienti dal finto Dolibarr 1.3.
+
+`tests/servizi.php` (incluso da `run.php`) prova la fase 3b: funzioni dal piano e webcam archiviate, sovrimpressione (originale intatto, ETag, sponsor), punteggi, timelapse (con ffmpeg se c'è, e senza), stesso momento, foto del giorno, statistiche e beacon, registro e verifica della catena, rapporti e certificati (PDF letti con `pdftotext` se installato), invio al finto Dolibarr 1.4, bot Telegram con un finto server, tutti gli endpoint nuovi delle API dei siti, pannello e script di `bin/`.
 
 ```sh
 TEST_DB_HOST=127.0.0.1 TEST_DB_PORT=3306 TEST_DB_NAME=webcam2_test TEST_DB_USER=webcam2 TEST_DB_PASS=... php tests/run.php
@@ -290,4 +345,4 @@ Su Windows: `set TEST_DB_PASS=...` e poi `C:\xampp\php\php.exe tests\run.php` (s
 - Le medie orarie usano solo i campioni con `time_synced = true`; gli altri si contano in `samples_unsynced`.
 - La retention delle foto cancella il file ma tiene il record in `photos` (`deleted_at`) con lo SHA-256, per le certificazioni; con il file vanno via le sue riduzioni.
 - Gli URL delle immagini già dati ai siti valgono fino alla loro scadenza anche se la chiave viene revocata o la webcam diventa privata.
-- Prossimi passi: miniature (`current-1280.jpg`), archivio pubblico per giorno, time-lapse, utenti dei clienti, interventi verso Dolibarr, pagina per le esclusioni dalla disponibilità (ora solo nella tabella `availability_exclusions`).
+- Prossimi passi: miniature (`current-1280.jpg`), archivio pubblico per giorno, utenti dei clienti (pannello del cliente), interventi verso Dolibarr, pagina per le esclusioni dalla disponibilità (ora solo nella tabella `availability_exclusions`).
