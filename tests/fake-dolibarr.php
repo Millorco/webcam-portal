@@ -7,6 +7,10 @@
  * close_refused, 403, 409), POST availability (409 sui mesi definitivi) e
  * GET /tickets/{id}, GET /thirdparties/57. Ticket e mesi stanno in FAKE_DOLIBARR_STATE (JSON),
  * condiviso tra i finti 1.2 e 1.3.
+ * FAKE_DOLIBARR_MODE=14: modulo 1.4 come il 1.3 più plan/options/archives in
+ * GET portal (sovrascrivibili con "portal14" nello stato), POST documents
+ * (409 con overwrite 0, email una volta per portal_doc_id: poi sent e
+ * duplicate), POST register (created/duplicate/conflict), film_status.
  * Ogni richiesta è aggiunta come riga JSON a FAKE_DOLIBARR_LOG.
  */
 
@@ -43,8 +47,8 @@ $state += ['next' => 341, 'tickets' => [], 'availability' => []];
 $save = static function () use (&$state, $stateFile): void {
 	file_put_contents($stateFile, json_encode($state, JSON_PRETTY_PRINT));
 };
-if (in_array($mode, ['12', '13'], true) && $method === 'POST' && $path === '/webcams/12/tickets') {
-	$rule = $mode === '13' ? ($body['portal_rule'] ?? null) : null;
+if (in_array($mode, ['12', '13', '14'], true) && $method === 'POST' && $path === '/webcams/12/tickets') {
+	$rule = $mode !== '12' ? ($body['portal_rule'] ?? null) : null;
 	if ($rule !== null && (strlen((string) $rule) > 64 || !preg_match('/^[a-z][a-z0-9_]*\.[a-z0-9_.]+$/', (string) $rule))) {
 		$fail(400, 'Bad Request: portal_rule non valido');
 		return;
@@ -62,18 +66,82 @@ if (in_array($mode, ['12', '13'], true) && $method === 'POST' && $path === '/web
 		}
 	}
 	$id = $state['next']++;
-	$state['tickets'][$id] = ['ref' => sprintf('TS2611-%04d', $id), 'ref_ext' => 'portal:' . ($body['portal_event_id'] ?? ''), 'rule' => $mode === '13' ? $rule : null,
+	$state['tickets'][$id] = ['ref' => sprintf('TS2611-%04d', $id), 'ref_ext' => 'portal:' . ($body['portal_event_id'] ?? ''), 'rule' => $mode !== '12' ? $rule : null,
 		'status' => 0, 'portal' => true, 'messages' => [$body['message'] ?? ''], 'events' => []];
 	$save();
-	echo json_encode(['ok' => true, 'ticket_id' => $id, 'ticket_ref' => $state['tickets'][$id]['ref'], 'duplicate' => false] + ($mode === '13' ? ['status' => 0] : []));
+	echo json_encode(['ok' => true, 'ticket_id' => $id, 'ticket_ref' => $state['tickets'][$id]['ref'], 'duplicate' => false] + ($mode !== '12' ? ['status' => 0] : []));
 	return;
 }
-if ($mode === '13') {
+if ($mode === '14') {
+	if ($method === 'POST' && $path === '/webcams/12/documents') {
+		$data = base64_decode((string) ($body['filecontent'] ?? ''), true);
+		if ($data === false || hash('sha256', $data) !== ($body['sha256'] ?? '')) {
+			$fail(400, 'Bad Request: contenuto o sha256 non validi');
+			return;
+		}
+		$name = (string) ($body['filename'] ?? '');
+		if (isset($state['docs'][$name]) && empty($body['overwrite'])) {
+			$fail(409, 'Conflict: file già presente');
+			return;
+		}
+		$state['docs'][$name] = ['sha256' => $body['sha256'], 'doc_type' => $body['doc_type'] ?? 'other', 'period' => $body['period'] ?? null, 'portal_doc_id' => $body['portal_doc_id'] ?? null, 'size' => strlen($data)];
+		$email = null;
+		if (is_array($body['send_email'] ?? null)) {
+			$pid = (string) ($body['portal_doc_id'] ?? '');
+			$dup = isset($state['emails'][$pid]) && empty($body['send_email']['resend']);
+			if (!$dup) {
+				$state['emails'][$pid] = ($state['emails'][$pid] ?? 0) + 1;
+			}
+			$email = ['requested' => true, 'sent' => true, 'duplicate' => $dup, 'to' => ['direzione@impresa.example'], 'actioncomm_id' => 9000 + count($state['emails']), 'reason' => null];
+		}
+		$save();
+		echo json_encode(['ok' => true, 'id' => 12, 'file' => 'webcam/' . $webcam['ref'] . '/' . $name, 'email' => $email]);
+		return;
+	}
+	if ($method === 'POST' && $path === '/webcams/12/register') {
+		$res = [];
+		foreach ((array) ($body['days'] ?? []) as $d) {
+			if (!preg_match('/^[0-9a-f]{64}$/', (string) ($d['day_hash'] ?? ''))) {
+				$fail(400, 'Bad Request: day_hash non valido');
+				return;
+			}
+			$day = (string) $d['day'];
+			if (!isset($state['register'][$day])) {
+				$state['register'][$day] = ['day_hash' => $d['day_hash'], 'at' => time()];
+				$res[] = ['day' => $day, 'status' => 'created', 'registered_at' => time()];
+			} elseif ($state['register'][$day]['day_hash'] === $d['day_hash']) {
+				$res[] = ['day' => $day, 'status' => 'duplicate', 'registered_at' => $state['register'][$day]['at']];
+			} else {
+				$res[] = ['day' => $day, 'status' => 'conflict', 'registered_at' => $state['register'][$day]['at']];
+			}
+		}
+		$save();
+		echo json_encode(['ok' => true, 'id' => 12, 'results' => $res]);
+		return;
+	}
+	if ($method === 'PUT' && $path === '/webcams/12/portal') {
+		if (isset($body['film_status'])) {
+			$state['film'][] = $body['film_status'];
+			$save();
+		}
+		echo json_encode(['ok' => true, 'id' => 12]);
+		return;
+	}
+}
+if ($mode === '13' || $mode === '14') {
 	if ($method === 'GET' && $path === '/webcams/12/portal') {
-		echo json_encode(['ok' => true, 'id' => 12, 'ref' => $webcam['ref'], 'status' => 1, 'customer' => ['id' => 57, 'name' => 'Impresa di prova'],
+		$res = ['ok' => true, 'id' => 12, 'ref' => $webcam['ref'], 'status' => 1, 'customer' => ['id' => 57, 'name' => 'Impresa di prova'],
 			'portal' => ['portal_slug' => 'x', 'url_current' => null, 'windy_published' => 0, 'windy_id' => null],
 			'sla' => ['enabled' => true, 'offline_hours' => 4, 'response_days' => 2, 'target_pct' => 97.5, 'hours' => '07:00-24:00', 'weekdays' => '123456'],
-			'shutter' => ['life' => 150000, 'warn_pct' => 85, 'used' => 48213, 'level' => ''], 'rttys' => (object) []]);
+			'shutter' => ['life' => 150000, 'warn_pct' => 85, 'used' => 48213, 'level' => ''], 'rttys' => (object) []];
+		if ($mode === '14') {
+			$res = array_replace($res, ['plan' => ['level' => 'pro', 'note' => 'offerta di prova', 'rental_start' => null, 'rental_end' => null],
+				'options' => ['sponsor' => ['enabled' => false, 'slots' => 3, 'start' => null, 'end' => null], 'weather_cert' => false,
+					'film' => ['option' => '', 'format' => 'landscape', 'duration_s' => 60, 'status' => '', 'url' => ''],
+					'report' => ['enabled' => true, 'recipients' => ['direzione@impresa.example']]],
+				'archives' => []], (array) ($state['portal14'] ?? []));
+		}
+		echo json_encode($res);
 		return;
 	}
 	if ($method === 'GET' && $path === '/thirdparties/57') {
@@ -132,7 +200,7 @@ if ($mode === '13') {
 		return;
 	}
 }
-if ($mode === '12' || $mode === '13') {
+if (in_array($mode, ['12', '13', '14'], true)) {
 	if ($method === 'GET' && preg_match('#^/webcams/bymac/([0-9a-f]{12})$#', $path, $m)) {
 		if ($m[1] === '9483c412abcd') {
 			echo json_encode($webcam);

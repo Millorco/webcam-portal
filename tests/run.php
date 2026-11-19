@@ -664,6 +664,9 @@ require __DIR__ . '/diagnosi.php';
 // ------------------------------------------------------------ API dei siti (0.3)
 require __DIR__ . '/siti.php';
 
+// ------------------------------------------------------------ servizi (0.4)
+require __DIR__ . '/servizi.php';
+
 // ------------------------------------------------------------ errori del server
 section('Scritta sovrapposta e camera mossa');
 (function (): void {

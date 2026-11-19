@@ -446,6 +446,8 @@ ok($la === [['rule_id' => 'logs.camera_errors', 'status' => 'open'], ['rule_id' 
 $du = Db::all("SELECT state FROM rule_state WHERE webcam_id IN (?, ?) AND rule_id = 'logs.reboots'", [$dup1, $dup2]);
 ok(count($du) === 2 && array_unique(array_column($du, 'state')) === ['unknown'] && (int) Db::scalar('SELECT COUNT(*) FROM alerts WHERE webcam_id IN (?, ?)', [$dup1, $dup2]) === 0, 'hostname non univoco: dati insufficienti, nessun avviso');
 ok(Db::scalar('SELECT log_ok FROM log_counters WHERE webcam_id = ? LIMIT 1', [$lid]) == 1, 'log_counters del giorno chiuso');
+$lc = Db::one('SELECT boots_log, camera_errors_log, uploads_ok, ntp_issues, sensor_errors_log, log_lines, log_hours FROM log_counters WHERE webcam_id = ? AND day = ?', [$lid, gmdate('Y-m-d', time() - 86400)]);
+ok($lc !== null && (int) $lc['boots_log'] === 3 && (int) $lc['camera_errors_log'] === 4 && $lc['uploads_ok'] !== null && $lc['log_lines'] !== null && $lc['log_hours'] !== null, 'log_counters: colonne nuove della migrazione 004 scritte', json_encode($lc));
 // conteggi a zero (hostname senza righe = 0): gli avvisi si chiudono
 file_put_contents($vlData, json_encode([]));
 [$rc, $out] = $runRules($vlCfg, '--regole logs --logs');
