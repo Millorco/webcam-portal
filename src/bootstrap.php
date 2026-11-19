@@ -6,7 +6,7 @@
 
 declare(strict_types=1);
 
-const WEBCAM_PORTAL_VERSION = '0.2.0';
+const WEBCAM_PORTAL_VERSION = '0.3.0';
 define('WEBCAM_PORTAL_ROOT', dirname(__DIR__));
 
 spl_autoload_register(static function (string $class): void {

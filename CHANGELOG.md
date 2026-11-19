@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.0 - 2026-11-19
+
+Fase 3 di Webcam 2.0 (siti dei clienti in WordPress), secondo il contratto dei dati 1.2.
+
+- Migrazione 003 (`migrations/003_siti.sql`, compatibile con MariaDB 10.4): campi `code`, `town`, `source`, `note` dei clienti, storico delle assegnazioni `customer_webcams`, chiavi dei siti `site_keys`.
+- Clienti importati da `bin/sync-dolibarr.php` (cliente di `GET webcams/{id}/portal`, codice, email e città da `GET thirdparties/{id}`) o creati nel pannello; webcam assegnate con lo storico: il cliente nuovo di una webcam non vede le foto e le misure del cliente di prima, il pubblico vede solo l'assegnazione in corso.
+- Chiavi API dei siti `vls_...` (solo SHA-256 nel database) per cliente, con scope `public`/`client`, origini ammesse (CORS, anche `https://*.dominio`), limite al minuto e scadenza; gestione da pannello (*Clienti*: crea, mostra una volta, origini, revoca) e da `bin/site-key.php`.
+- API in sola lettura `GET /api/site/v1/`: `whoami`, `webcams`, `webcams/{slug}`, `photos?date=`, `days?month=`, `series?from&to&fields=` (medie orarie di temperatura, umidità e punto di rugiada esterni), `compare?a=&b=`. Webcam pubbliche anche senza chiave; nessun dato interno nelle risposte.
+- Foto ridotte `/img/{id}/{size}.jpg` (320, 640, 1280, 1920; originale solo per lo scope `client`) con URL firmati HMAC e scadenza, generate con GD una alla volta e tenute in `storage/cache/img/`; ETag, 304, `Cache-Control` fino alla scadenza; `photo_metrics.memory_limit` per le foto da 24 MP (`503` se non basta); pulizia nella retention.
+- Pannello: pagine *Clienti* e scheda del cliente; nella scheda della webcam cliente, latitudine, longitudine e altitudine.
+- Limite di frequenza generalizzato (per token, per chiave, per IP).
+- Test della fase 3 in `tests/siti.php`; il finto Dolibarr 1.3 risponde a `GET /thirdparties/57`.
+
 ## 0.2.0 - 2026-11-19
 
 Fase 2 di Webcam 2.0 (assistenza automatica), secondo il contratto dei dati 1.1.

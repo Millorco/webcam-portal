@@ -1,6 +1,6 @@
 # webcam-portal
 
-Portale di Webcam 2.0 (Viewlapse): riceve dai router con [luci-app-webcam](https://github.com/Millorco/luci-app-webcam) le foto, la telemetria ogni 5 minuti e gli eventi, li salva in MariaDB e pubblica l'ultima foto di ogni webcam (`/cam/{slug}/current.jpg`, adatta a Windy e ai siti dei clienti). Riassume i dati verso il modulo Dolibarr [dolibarr-webcams](https://github.com/Millorco/dolibarr-webcams) tramite le sue API.
+Portale di Webcam 2.0 (Viewlapse): riceve dai router con [luci-app-webcam](https://github.com/Millorco/luci-app-webcam) le foto, la telemetria ogni 5 minuti e gli eventi, li salva in MariaDB e pubblica l'ultima foto di ogni webcam (`/cam/{slug}/current.jpg`, adatta a Windy e ai siti dei clienti). Riassume i dati verso il modulo Dolibarr [dolibarr-webcams](https://github.com/Millorco/dolibarr-webcams) tramite le sue API. Dalla 0.3 dà ai siti dei clienti in WordPress un'API in sola lettura con chiavi per cliente e foto ridotte con URL firmati: le foto restano sul portal, i siti le mostrano soltanto.
 
 - PHP 8.2 senza framework e senza composer (autoload PSR-4 scritto a mano), accesso al database con PDO.
 - MariaDB 11.8 sul VPS (database separato da quello di Dolibarr, utente dedicato); MariaDB 10.4+ di XAMPP per l'anteprima locale su Windows.
@@ -9,9 +9,9 @@ Portale di Webcam 2.0 (Viewlapse): riceve dai router con [luci-app-webcam](https
 
 ## Contratto dei dati
 
-Formati JSON, API e schema del database comuni a tutte le repository: [docs/contratto/](docs/contratto/README.md). Le API implementate sono esattamente quelle di [api-portal-v1.md](docs/contratto/api-portal-v1.md). Il portal 0.2 implementa il contratto 1.1 (fase 2: [diagnosi](docs/contratto/diagnosi-v1.md), comandi al router, disponibilità, migrazione [002](docs/contratto/schema-mariadb-002.sql)).
+Formati JSON, API e schema del database comuni a tutte le repository: [docs/contratto/](docs/contratto/README.md). Le API implementate sono esattamente quelle di [api-portal-v1.md](docs/contratto/api-portal-v1.md). Il portal 0.2 implementa il contratto 1.1 (fase 2: [diagnosi](docs/contratto/diagnosi-v1.md), comandi al router, disponibilità, migrazione [002](docs/contratto/schema-mariadb-002.sql)); la 0.3 il contratto 1.2 (fase 3: [API dei siti](docs/contratto/api-siti-v1.md), migrazione [003](docs/contratto/schema-mariadb-003.sql)).
 
-## Cosa fa (versione 0.2)
+## Cosa fa (versione 0.3)
 
 | Funzione | Dove |
 |---|---|
@@ -39,6 +39,34 @@ Fase 2 (assistenza automatica, 0.2):
 | Conteggi dei log da VictoriaLogs (riavvii, errori finali della fotocamera, tentativi) per hostname | `src/Logs/` |
 | Pannello: pagina Avvisi (aperti/chiusi, filtri per webcam e regola), dettaglio con presa in carico, chiusura e silenzio della regola; nella scheda stato delle regole, comandi (Scatta ora, Riscaldamento 30 min, Invia telemetria), nitidezza degli ultimi 7 giorni, riferimenti per fascia, disponibilità e impostazioni di servizio | `src/Admin/DiagnosisPages.php`, `templates/admin/` |
 
+Fase 3 (siti dei clienti in WordPress, 0.3):
+
+| Funzione | Dove |
+|---|---|
+| Clienti (`customers`, collegati al terzo Dolibarr con `dolibarr_socid`) importati da `sync-dolibarr.php` (`GET webcams/{id}/portal` e `GET thirdparties/{id}`) o creati nel pannello; webcam assegnate con lo storico (`customer_webcams`): il cliente nuovo di una webcam a noleggio non vede le foto del cliente di prima | `src/Service/Customers.php`, `src/Dolibarr/Sync.php` |
+| Chiavi API dei siti `vls_...` per cliente (solo SHA-256 nel database), scope `public` (webcam pubbliche) o `client` (tutte le webcam del cliente), origini ammesse per CORS, limite al minuto per chiave | `src/Service/SiteKeys.php`, pannello *Clienti*, `bin/site-key.php` |
+| `GET /api/site/v1/whoami`, `webcams`, `webcams/{slug}`, `.../photos?date=`, `.../days?month=`, `.../series?from&to&fields=`, `.../compare?a=&b=`; senza chiave le sole webcam pubbliche | `src/Site/SiteApi.php` |
+| Foto ridotte `/img/{id}/{320,640,1280,1920,orig}.jpg?e=&s=` con firma HMAC e scadenza, generate con GD una alla volta e tenute in `storage/cache/img/` (ETag, `Cache-Control` fino alla scadenza); originale solo per lo scope `client` | `src/Site/Images.php` |
+
+## API per i siti (WordPress)
+
+Documentata nel contratto: [docs/contratto/api-siti-v1.md](docs/contratto/api-siti-v1.md). In breve:
+
+1. Il cliente arriva da Dolibarr (`php bin/sync-dolibarr.php`, cliente della scheda webcam) o si crea in *Pannello → Clienti*; la webcam si assegna dalla scheda (campo *Cliente*), dove si inseriscono anche latitudine, longitudine e altitudine.
+2. Nella scheda del cliente, *Nuova chiave*: scope `public` per il plugin "solo visualizzazione" (con le origini del sito, es. `https://www.hotel.it`, se il plugin chiama dal browser) o `client` per il "portale clienti" (origini vuote: si usa solo dal server WordPress). La chiave si vede una volta sola. Da riga di comando:
+
+   ```sh
+   php bin/site-key.php --clienti
+   php bin/site-key.php --crea --cliente 7 --scope client --etichetta "portale clienti"
+   php bin/site-key.php --crea --socid 57 --scope public --origini "https://www.hotel.it,https://*.hotel.it"
+   php bin/site-key.php --elenco
+   php bin/site-key.php --revoca 3
+   ```
+
+3. Prova: `curl -H "Authorization: Bearer vls_..." https://portal.viewlapse.com/api/site/v1/whoami`. Senza chiave `.../api/site/v1/webcams` elenca le webcam pubbliche.
+
+Impostazioni in `config.php`, sezione `site_api`: limiti al minuto (600 per chiave, 120 senza chiave per IP, 1200 immagini per IP), segreto degli URL firmati (`url_secret`, vuoto = generato in `storage/keys/site-url.secret`: va conservato con lo storage), durata degli URL (7 giorni, arrotondata al giorno), qualità JPEG, giorni di cache delle riduzioni (30). Le riduzioni usano `photo_metrics.memory_limit` come le metriche: con una foto da 24 MP servono circa 120 MB, altrimenti `503` e una riga in `storage/logs/site-api.log`. Dietro Nginx Proxy Manager le risposte delle immagini si possono mettere in cache anche lì (`Cache-Control: public` per le webcam pubbliche).
+
 ## Struttura
 
 ```
@@ -46,11 +74,11 @@ public/            radice del sito: index.php (front controller), .htaccess, ass
 src/               codice (namespace WebcamPortal\ -> src/)
 templates/         pagine HTML (pannello e pagina pubblica)
 config/            config.example.php (da copiare in config.php, ignorato da git)
-migrations/        001_schema.sql = schema del contratto; tabella schema_migrations
+migrations/        001_schema.sql = schema del contratto, 002 diagnosi, 003 siti; tabella schema_migrations
 bin/               script da riga di comando e cron
 tools/             simula-router.php
-storage/           foto, log, sessioni (fuori da public/, ignorato da git)
-tests/             run.php e diagnosi.php (test senza PHPUnit), fake-dolibarr.php, fake-victorialogs.php
+storage/           foto, cache delle riduzioni, segreto degli URL, log, sessioni (fuori da public/, ignorato da git)
+tests/             run.php, diagnosi.php e siti.php (test senza PHPUnit), fake-dolibarr.php, fake-victorialogs.php
 docker/, Dockerfile, docker-compose.yml   per il VPS
 ```
 
@@ -164,9 +192,9 @@ NPM manda `X-Forwarded-Proto: https`: con `TRUST_PROXY=true` (predefinito nel co
 | `bin/photo-metrics.php` | ogni 5 minuti | metriche delle foto nuove (una ogni 30 minuti per webcam) e regole delle foto (`--webcam`, `--now`, `--senza-regole`) |
 | `bin/availability.php` | ogni ora, al minuto 20 | disponibilità di oggi e dei 7 giorni prima, mesi provvisori e definitivi (`--webcam`, `--dal`, `--al`, `--now`) |
 | `bin/aggregate-hourly.php` | ogni ora, al minuto 5 | ricalcola le medie orarie delle ultime 3 ore (`--ore N`, `--dal AAAA-MM-GG --al ...`) |
-| `bin/sync-dolibarr.php` | ogni ora, al minuto 15 | invia a Dolibarr contatori, Victron, URL `current.jpg`, eventi in agenda, disponibilità; legge le soglie `sla_*`; ticket; riprova gli endpoint mancanti |
+| `bin/sync-dolibarr.php` | ogni ora, al minuto 15 | invia a Dolibarr contatori, Victron, URL `current.jpg`, eventi in agenda, disponibilità; legge le soglie `sla_*` e il cliente della webcam; ticket; riprova gli endpoint mancanti |
 | `bin/partitions.php` | ogni giorno alle 03:10 | crea le partizioni dei prossimi 2 mesi, cancella quelle oltre 12 mesi (`--prova`, `--elenco`) |
-| `bin/retention-photos.php` | ogni giorno alle 03:30 | originali oltre 90 giorni: tiene una foto l'ora (`--giorni N`, `--prova`) |
+| `bin/retention-photos.php` | ogni giorno alle 03:30 | originali oltre 90 giorni: tiene una foto l'ora; cache delle riduzioni per i siti non usate da 30 giorni (`--giorni N`, `--cache-giorni N`, `--prova`) |
 
 I risultati finiscono in `storage/logs/cron.log`, `rules.log`, `photo-metrics.log`, `availability.log` e `sync-dolibarr.log`. `rules.php` e `photo-metrics.php` hanno un lucchetto: se un giro è ancora in corso il successivo salta.
 
@@ -225,6 +253,7 @@ Per ogni webcam non ritirata: la cerca per MAC (`GET webcams/bymac/9483c412abcd`
 Con il modulo 1.3, a ogni giro:
 
 - `GET webcams/{id}/portal` copia in `webcam_service` le soglie del contratto di noleggio (`sla_*`), la vita dell'otturatore e i link rttys; finché la webcam non ne ha, le soglie si impostano nella scheda del pannello.
+- Dallo stesso `GET webcams/{id}/portal` il cliente (`customer`) diventa un record di `customers` (per `dolibarr_socid`, con codice, email e città da `GET thirdparties/{id}` se l'utente può leggere i terzi) e la webcam gli viene assegnata con lo storico; `customer: null` la toglie. Dolibarr vince sul pannello a ogni giro. Il campo *Attivo* del cliente resta del pannello.
 - `POST webcams/{id}/availability` manda il mese provvisorio una volta al giorno e il definitivo il 3 del mese dopo. Un `409` su un mese già definitivo vuol dire "già registrato".
 - I ticket seguono gli avvisi con azione *ticket*: `POST webcams/{id}/tickets` all'apertura (con `portal_rule` e `portal_alert_id`; se Dolibarr ha già un ticket aperto per la regola risponde `open_for_rule` e il portal lo usa), `PUT webcams/{id}/tickets/{ticket_id}` per i messaggi e la chiusura (`close_refused: in_progress` se qualcuno ci sta lavorando: resta aperto; `409` se è già chiuso e `403` se non è un ticket del portal: non si riprova), `GET /tickets/{id}` per sapere se l'operatore l'ha chiuso.
 - La descrizione ha i dati misurati, cosa controllare, il link all'avviso nel portal e i link rttys (`rttys_url` + `/api/connect/<ref Dolibarr>`, se Dolibarr non li manda).
@@ -246,6 +275,8 @@ Con il modulo 1.3, a ogni giro:
 
 `tests/diagnosi.php` (incluso da `run.php`) prova la fase 2: per ogni scenario del simulatore (`guarnizione`, `riscaldamento`, `sole`, `vetro-appannato`, `vetro-sporco`, `camera-mossa`, `camera-ferma`) una webcam nuova riceve giorni di storico con il guasto e poi la riparazione; metriche foto e regole girano ora per ora con l'ora finta, e l'avviso deve aprirsi durante il guasto e chiudersi da solo dopo. Poi una webcam sana senza avvisi, comandi (consegna solo con intestazione e scope, ack dal simulatore, scadenza, validazione, pulsanti del pannello), metriche (memoria insufficiente), pagina Avvisi, disponibilità, ticket con i finti Dolibarr 1.2 e 1.3 e VictoriaLogs con un finto server. Dura qualche minuto.
 
+`tests/siti.php` (incluso da `run.php`) prova la fase 3: clienti e storico delle assegnazioni, chiavi (formato, solo hash, scope, revoca, scadenza, cliente disattivato, limite al minuto), CORS (origini esatte e `*.`, preliminare `OPTIONS`, 403 dal browser), tutti gli endpoint con i loro errori, nessun dato interno nelle risposte, URL firmati (dimensione, foto e scadenza non modificabili), riduzioni a 320/640/1280/1920 e originale, cache su disco con ETag/304, foto da 24 MP con poca memoria (`503`), pulizia della cache, cambio di cliente, pannello, `bin/site-key.php` e import dei clienti dal finto Dolibarr 1.3.
+
 ```sh
 TEST_DB_HOST=127.0.0.1 TEST_DB_PORT=3306 TEST_DB_NAME=webcam2_test TEST_DB_USER=webcam2 TEST_DB_PASS=... php tests/run.php
 ```
@@ -257,5 +288,6 @@ Su Windows: `set TEST_DB_PASS=...` e poi `C:\xampp\php\php.exe tests\run.php` (s
 - `current.jpg` è una copia dell'ultima foto in `storage/photos/<id>/current.jpg`, con `current.json` accanto (id, SHA-256, ora) per `ETag` e `Last-Modified`. Una foto che arriva dalla coda offline, o con `current=0`, non sostituisce una più recente.
 - `from_queue = 1` quando la foto arriva più di 15 minuti dopo lo scatto (il contratto non prevede un campo esplicito).
 - Le medie orarie usano solo i campioni con `time_synced = true`; gli altri si contano in `samples_unsynced`.
-- La retention delle foto cancella il file ma tiene il record in `photos` (`deleted_at`) con lo SHA-256, per le certificazioni.
+- La retention delle foto cancella il file ma tiene il record in `photos` (`deleted_at`) con lo SHA-256, per le certificazioni; con il file vanno via le sue riduzioni.
+- Gli URL delle immagini già dati ai siti valgono fino alla loro scadenza anche se la chiave viene revocata o la webcam diventa privata.
 - Prossimi passi: miniature (`current-1280.jpg`), archivio pubblico per giorno, time-lapse, utenti dei clienti, interventi verso Dolibarr, pagina per le esclusioni dalla disponibilità (ora solo nella tabella `availability_exclusions`).
