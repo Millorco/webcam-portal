@@ -63,6 +63,8 @@ $publicUrl = $req->baseUrl() . '/cam/' . $w['slug'] . '/current.jpg';
 	<?= $charts[1] ?>
 </section>
 
+<?= \WebcamPortal\Web\View::render('admin/webcam-diagnosis', get_defined_vars()) ?>
+
 <section>
 	<h2>Ultime misure</h2>
 	<?php if (!$recent): ?><p class="muted">Nessuna misura nelle ultime 24 ore.</p><?php else: ?>

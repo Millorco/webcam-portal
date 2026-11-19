@@ -13,7 +13,7 @@ $status = [0 => 'da installare', 1 => 'in servizio', 9 => 'ritirata'];
 	<thead><tr>
 		<th>Ultima foto</th><th>Webcam</th><th>Ultimo contatto</th>
 		<th class="num">T int</th><th class="num">UR int</th><th class="num">T est</th><th class="num">UR est</th>
-		<th class="num">Batteria</th><th>Rete</th>
+		<th class="num">Batteria</th><th>Rete</th><th>Avvisi aperti</th>
 	</tr></thead>
 	<tbody>
 	<?php foreach ($webcams as $w):
@@ -37,6 +37,9 @@ $status = [0 => 'da installare', 1 => 'in servizio', 9 => 'ritirata'];
 			<td class="num"><?= View::num($l['rh_ext'] ?? null, 0, '%') ?></td>
 			<td class="num"><?= View::num($l['battery_v'] ?? null, 2, 'V') ?></td>
 			<td><?= View::e($l['net_type'] ?? '—') ?><?= isset($l['rssi_dbm']) ? ' ' . (int) $l['rssi_dbm'] . ' dBm' : '' ?></td>
+			<td><?php foreach ($w['alerts'] as $a): ?>
+				<div><a class="sev <?= View::e($a['severity']) ?>" href="<?= View::e($href . '/alerts/' . (int) $a['id']) ?>"><?= View::e($a['title']) ?></a></div>
+			<?php endforeach; ?><?= $w['alerts'] ? '' : '<span class="muted">—</span>' ?></td>
 		</tr>
 	<?php endforeach; ?>
 	</tbody>

@@ -16,11 +16,14 @@ use WebcamPortal\Web\PublicController;
 use WebcamPortal\Web\View;
 
 /**
- * Pannello operatore minimo (/admin/...): login, elenco webcam, scheda,
- * creazione webcam e rigenerazione del token.
+ * Pannello operatore (/admin/...): login, elenco webcam, scheda, creazione
+ * webcam, rigenerazione del token; avvisi, comandi, riferimenti foto e
+ * disponibilità in DiagnosisPages.
  */
 final class AdminController
 {
+	use DiagnosisPages;
+
 	private ?array $user = null;
 
 	public function __construct(private Request $req)
@@ -56,11 +59,15 @@ final class AdminController
 			$this->index();
 			return;
 		}
+		if ($p === '/alerts') {
+			$this->alertsIndex();
+			return;
+		}
 		if ($p === '/webcams/new') {
 			$m === 'POST' ? $this->createPost() : $this->createForm();
 			return;
 		}
-		if (preg_match('#^/webcams/(\d+)(?:/(edit|token|current\.jpg|events/(\d+)))?$#', $p, $mm)) {
+		if (preg_match('#^/webcams/(\d+)(?:/(edit|token|current\.jpg|events/(\d+)|alerts/(\d+)|photos/(\d+)\.jpg|command|reference|service))?$#', $p, $mm)) {
 			$id = (int) $mm[1];
 			$w = Db::one('SELECT * FROM webcams WHERE id = ?', [$id]);
 			if ($w === null) {
@@ -76,6 +83,16 @@ final class AdminController
 				$this->tokenPost($w);
 			} elseif ($action === 'current.jpg') {
 				$this->currentJpg($w);
+			} elseif (str_starts_with($action, 'alerts/')) {
+				$m === 'POST' ? $this->alertPost($w, (int) $mm[4]) : $this->alertShow($w, (int) $mm[4]);
+			} elseif (str_starts_with($action, 'photos/')) {
+				$this->photoJpg($w, (int) $mm[5]);
+			} elseif ($m === 'POST' && $action === 'command') {
+				$this->commandPost($w);
+			} elseif ($m === 'POST' && $action === 'reference') {
+				$this->referencePost($w);
+			} elseif ($m === 'POST' && $action === 'service') {
+				$this->servicePost($w);
 			} elseif (str_starts_with($action, 'events/')) {
 				Response::redirect($this->req->url('/admin/webcams/' . $id . '#ev-' . (int) $mm[3]));
 			} else {
@@ -188,6 +205,7 @@ final class AdminController
 				[$w['id']]
 			);
 			$w['has_current'] = PhotoStore::current((int) $w['id']) !== null;
+			$w['alerts'] = Db::all("SELECT id, rule_id, severity, title FROM alerts WHERE webcam_id = ? AND status = 'open' ORDER BY FIELD(severity, 'critical', 'error', 'warning', 'notice')", [$w['id']]);
 		}
 		unset($w);
 		$this->page('index', 'Webcam', ['webcams' => $webcams]);
@@ -237,7 +255,7 @@ final class AdminController
 			'photosToday' => (int) Db::scalar('SELECT COUNT(*) FROM photos WHERE webcam_id = ? AND taken_at >= ?', [$id, Db::dt($from)]),
 			'newToken' => $newToken,
 			'timezones' => \DateTimeZone::listIdentifiers(),
-		]);
+		] + $this->diagnosisVars($w));
 	}
 
 	private function createForm(array $in = [], string $error = ''): void

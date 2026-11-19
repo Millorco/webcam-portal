@@ -16,9 +16,11 @@ final class SvgChart
 	/**
 	 * @param list<array{label:string, class:string, points:list<array{0:int,1:?float}>}> $series
 	 *        punti [ora Unix, valore]; null = buco nella linea
+	 * @param array{gap?:int, empty?:string} $opt gap: secondi senza punti che interrompono la linea (20 min)
 	 */
-	public static function render(string $title, string $unit, array $series, int $from, int $to, string $tz, int $dec = 1): string
+	public static function render(string $title, string $unit, array $series, int $from, int $to, string $tz, int $dec = 1, array $opt = []): string
 	{
+		$gap = (int) ($opt['gap'] ?? 1200);
 		$w = 720;
 		$h = 240;
 		$l = 44;
@@ -43,7 +45,7 @@ final class SvgChart
 		}
 		$out .= '</ul>';
 		if ($vals === []) {
-			return $out . '<p class="muted">Nessun dato nelle ultime 24 ore.</p></figure>';
+			return $out . '<p class="muted">' . View::e($opt['empty'] ?? 'Nessun dato nelle ultime 24 ore.') . '</p></figure>';
 		}
 		[$min, $max, $step] = self::scale(min($vals), max($vals));
 		$x = static fn (int $ts): float => $l + ($ts - $from) / max(1, $to - $from) * $pw;
@@ -57,17 +59,18 @@ final class SvgChart
 			$svg .= '<text class="axis" x="' . ($l - 6) . '" y="' . ($yy + 4) . '" text-anchor="end">'
 				. View::e(View::num($v, $step < 1 ? 1 : 0)) . '</text>';
 		}
-		// asse x: un'etichetta ogni 3 ore (ora locale)
+		// asse x: un'etichetta ogni 3 ore (ora locale), o una al giorno oltre le 48 ore
 		$zone = new \DateTimeZone($tz);
+		$days = $to - $from > 172800;
 		$first = $from - ($from % 3600) + 3600;
 		for ($ts = $first; $ts <= $to; $ts += 3600) {
 			$d = (new \DateTimeImmutable('@' . $ts))->setTimezone($zone);
-			if ((int) $d->format('G') % 3 !== 0) {
+			if ($days ? (int) $d->format('G') !== 0 : (int) $d->format('G') % 3 !== 0) {
 				continue;
 			}
 			$xx = round($x($ts), 1);
 			$svg .= '<line class="tick" x1="' . $xx . '" x2="' . $xx . '" y1="' . ($t + $ph) . '" y2="' . ($t + $ph + 4) . '"/>';
-			$svg .= '<text class="axis" x="' . $xx . '" y="' . ($h - 8) . '" text-anchor="middle">' . $d->format('H:i') . '</text>';
+			$svg .= '<text class="axis" x="' . $xx . '" y="' . ($h - 8) . '" text-anchor="middle">' . $d->format($days ? 'd/m' : 'H:i') . '</text>';
 		}
 		$svg .= '<line class="baseline" x1="' . $l . '" x2="' . ($l + $pw) . '" y1="' . ($t + $ph) . '" y2="' . ($t + $ph) . '"/>';
 
@@ -79,8 +82,8 @@ final class SvgChart
 			$lastPt = null;
 			$hits = '';
 			foreach ($s['points'] as [$ts, $v]) {
-				// un buco di oltre 20 minuti interrompe la linea
-				if ($v === null || ($prevTs !== null && $ts - $prevTs > 1200)) {
+				// un buco di oltre $gap secondi interrompe la linea
+				if ($v === null || ($prevTs !== null && $ts - $prevTs > $gap)) {
 					$pen = false;
 				}
 				if ($v !== null) {

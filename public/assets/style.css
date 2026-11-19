@@ -151,3 +151,24 @@ svg.svgchart .hit:hover { fill: var(--text-2); }
 body.public figure.cam { margin: 0; }
 body.public figure.cam img { width: 100%; height: auto; border-radius: 6px; display: block; }
 body.public figcaption { margin-top: 6px; color: var(--text-2); }
+
+/* diagnosi */
+.filters { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: end; margin-bottom: 16px; }
+.filters label { display: grid; gap: 4px; font-size: 0.85rem; color: var(--text-2); }
+.filters select { width: auto; max-width: 100%; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0 12px; }
+.row select { width: auto; }
+button.secondary { background: var(--surface); color: var(--accent); }
+fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 12px; min-width: 0; }
+fieldset[disabled] { opacity: 0.6; }
+ul.alerts { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+.badge.never-muted { background: var(--bg); color: var(--muted); }
+.sev.notice { color: var(--text-2); }
+.kvp { display: inline-block; margin-right: 10px; white-space: nowrap; color: var(--text-2); }
+.kvp strong { color: var(--text); font-weight: 600; }
+.refs { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin-bottom: 12px; }
+.refs figure { margin: 0; }
+.refs img { width: 100%; height: auto; border-radius: 4px; display: block; }
+.big-num { font-size: 1.8rem; font-weight: 700; margin: 0.2em 0; font-variant-numeric: tabular-nums; }
+.big-num .small { font-weight: 400; }
+body.public .avail { color: var(--text-2); }
