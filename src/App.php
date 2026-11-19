@@ -14,6 +14,7 @@ use WebcamPortal\Http\Request;
 use WebcamPortal\Http\Response;
 use WebcamPortal\Service\Commands;
 use WebcamPortal\Site\Images;
+use WebcamPortal\Site\Media;
 use WebcamPortal\Site\SiteApi;
 use WebcamPortal\Web\PublicController;
 
@@ -34,6 +35,14 @@ final class App
 		}
 		if (preg_match('#^/img/(\d{1,19})/(320|640|1280|1920|orig|sq1080|p1350|s1920)\.jpg$#', $path, $m)) {
 			self::image($req, (int) $m[1], $m[2]);
+			return;
+		}
+		if (preg_match(Media::ROUTE, $path, $m)) {
+			self::media($req, $m[1], $m[2], $m[3]);
+			return;
+		}
+		if ($path === '/telegram/webhook') {
+			self::telegram($req);
 			return;
 		}
 		if (str_starts_with($path, '/api/')) {
@@ -78,6 +87,39 @@ final class App
 		} catch (\Throwable $e) {
 			Log::error("immagine $photoId/$size: " . get_class($e) . ' ' . $e->getMessage() . ' @' . $e->getFile() . ':' . $e->getLine(), 'site-api');
 			Response::json(500, ['ok' => false, 'error' => 'server_error', 'message' => 'Errore del server']);
+		}
+	}
+
+	/** Video, poster, loghi e documenti con URL firmato (api-siti-v1.md 1.1, "File dei servizi"). */
+	private static function media(Request $req, string $type, string $id, string $ext): void
+	{
+		try {
+			Media::serve($req, $type, $id, $ext);
+		} catch (ApiError $e) {
+			Response::json($e->status, ['ok' => false, 'error' => $e->error, 'message' => $e->getMessage()], $e->headers + ['Access-Control-Allow-Origin' => '*']);
+		} catch (\Throwable $e) {
+			Log::error("file $type/$id.$ext: " . get_class($e) . ' ' . $e->getMessage() . ' @' . $e->getFile() . ':' . $e->getLine(), 'site-api');
+			Response::json(500, ['ok' => false, 'error' => 'server_error', 'message' => 'Errore del server']);
+		}
+	}
+
+	/** POST /telegram/webhook (api-portal-v1.md 1.2). */
+	private static function telegram(Request $req): void
+	{
+		if ($req->method !== 'POST') {
+			Response::json(405, ['ok' => false, 'error' => 'method_not_allowed', 'message' => 'Solo POST'], ['Allow' => 'POST']);
+			return;
+		}
+		try {
+			$body = (string) file_get_contents('php://input', false, null, 0, 1048576);
+			if (\WebcamPortal\Telegram\Bot::webhook($req->header('X-Telegram-Bot-Api-Secret-Token'), $body) === 403) {
+				Response::json(403, ['ok' => false, 'error' => 'forbidden', 'message' => 'Segreto del webhook non valido']);
+			}
+		} catch (\Throwable $e) {
+			Log::error('webhook Telegram: ' . get_class($e) . ' ' . $e->getMessage(), 'telegram');
+			if (!headers_sent()) {
+				Response::json(200, ['ok' => true]);
+			}
 		}
 	}
 

@@ -7,7 +7,11 @@ namespace WebcamPortal\Web;
 use WebcamPortal\Db;
 use WebcamPortal\Http\Request;
 use WebcamPortal\Http\Response;
+use WebcamPortal\Log;
+use WebcamPortal\Overlay\Overlay;
 use WebcamPortal\Service\PhotoStore;
+use WebcamPortal\Service\Stats;
+use WebcamPortal\Site\Images;
 
 /**
  * Pagine pubbliche: /cam/{slug}, /cam/{slug}/current.jpg, /cam/{slug}/current.json.
@@ -28,7 +32,44 @@ final class PublicController
 			Response::notFound();
 			return;
 		}
-		self::sendJpeg($req, PhotoStore::currentFile((int) $w['id']), $cur['sha256'], $cur['taken_at'], 'public, max-age=60');
+		Stats::imageHit((int) $w['id']); // anche i 304 (api-portal-v1.md 1.2)
+		$file = PhotoStore::currentFile((int) $w['id']);
+		$etag = $cur['sha256'];
+		$o = self::overlayed($w, $cur);
+		if ($o !== null) {
+			[$file, $rev] = $o;
+			$etag .= '-o' . $rev;
+		}
+		self::sendJpeg($req, $file, $etag, $cur['taken_at'], 'public, max-age=60');
+	}
+
+	/**
+	 * current.jpg con la sovrimpressione (contratto 1.3): riduzione a
+	 * current_size con data, misure e logo, in cache come le altre. null =
+	 * l'originale (sovrimpressione spenta, current_size orig o errore).
+	 *
+	 * @return array{0:string,1:int,2:?array}|null file, overlay_rev, foto
+	 */
+	private static function overlayed(array $w, array $cur, bool $build = true): ?array
+	{
+		$ov = Overlay::active($w);
+		if (!Overlay::appliesTo($ov, 'current') || $ov['current_size'] === 'orig' || $cur['photo_id'] <= 0) {
+			return null;
+		}
+		$p = Db::one('SELECT id, webcam_id, sha256, taken_at, time_synced, t_ext, rh_ext, width, height FROM photos WHERE id = ?', [$cur['photo_id']]);
+		if ($p === null) {
+			return null;
+		}
+		if (!$build) {
+			return ['', (int) $ov['overlay_rev'], $p];
+		}
+		try {
+			$file = Images::derived($p, PhotoStore::currentFile((int) $w['id']), (string) $ov['current_size'], $w, $ov);
+			return [$file, (int) $ov['overlay_rev'], $p];
+		} catch (\Throwable $e) {
+			Log::warning("current.jpg di {$w['slug']} senza sovrimpressione: " . $e->getMessage(), 'site-api');
+			return null;
+		}
 	}
 
 	/** Invia un JPEG con ETag, Last-Modified e 304 (usato anche dal pannello). */
@@ -88,7 +129,17 @@ final class PublicController
 		if ($cur === null) {
 			return null;
 		}
-		$p = Db::one('SELECT mode, t_ext, rh_ext FROM photos WHERE id = ?', [$cur['photo_id']]) ?? [];
+		$p = Db::one('SELECT mode, t_ext, rh_ext, width, height FROM photos WHERE id = ?', [$cur['photo_id']]) ?? [];
+		$o = self::overlayed($w, $cur, false);
+		$width = isset($p['width']) ? (int) $p['width'] : null;
+		$height = isset($p['height']) ? (int) $p['height'] : null;
+		if ($o !== null && $width && $height) {
+			$scale = min(1.0, (int) Overlay::active($w)['current_size'] / max($width, $height));
+			if ($scale < 1) {
+				$width = max(1, (int) round($width * $scale));
+				$height = max(1, (int) round($height * $scale));
+			}
+		}
 		try {
 			$tz = new \DateTimeZone((string) $w['timezone']);
 		} catch (\Throwable $e) {
@@ -105,6 +156,9 @@ final class PublicController
 			'humidity_ext' => isset($p['rh_ext']) ? (float) $p['rh_ext'] : null,
 			'url' => $req->baseUrl() . '/cam/' . $w['slug'] . '/current.jpg',
 			'sha256' => $cur['sha256'],
+			'overlay' => $o !== null,
+			'width' => $width ?: null,
+			'height' => $height ?: null,
 		];
 	}
 

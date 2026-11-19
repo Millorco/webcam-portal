@@ -236,7 +236,8 @@ ok($r['json']['b']['photo']['id'] === $pA[0], 'compare: la foto di prima dell\'a
 ok($get("$S/webcams/alpi-cantiere/compare?a=1", $key($kCliA))['status'] === 400, 'compare: b mancante 400');
 
 // ------------------------------------------------------------ dati interni
-$all = implode("\n", $bodies);
+// il token del beacon (api-siti-v1.md 1.1) è previsto dal contratto: si toglie prima del controllo
+$all = preg_replace('/"beacon":\{[^}]*\}/', '"beacon":{}', implode("\n", $bodies));
 $macs = array_column(Db::all('SELECT mac FROM webcams'), 'mac');
 $leak = [];
 foreach ($macs as $m) {
@@ -335,7 +336,12 @@ section('API dei siti: cambio di cliente');
 Customers::assign($wPubA, $cB, 'portal', null, $now - 60);
 $r = $get("$S/webcams/alpi-lago/photos?date=$today", $key($kCliB));
 ok($r['status'] === 200 && $r['json']['photos'] === [], 'cliente nuovo: non vede le foto del cliente di prima');
-ok($get("$S/webcams/alpi-lago", $key($kCliA))['status'] === 404, 'cliente di prima: la webcam non è più sua');
+$r = $get("$S/webcams/alpi-lago", $key($kCliA));
+ok($r['status'] === 200 && $r['json']['webcam']['state'] === 'archived' && $r['json']['webcam']['current_url'] === null && $r['json']['webcam']['weather'] === null
+	&& preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) ($r['json']['webcam']['archive_until'] ?? '')), 'cliente di prima: webcam in archivio (archive.default_days), senza current_url e meteo', $r['body']);
+ok($get("$S/webcams/alpi-lago", $key($kPubA))['status'] === 404, 'cliente di prima con chiave public: 404');
+Db::exec('UPDATE customer_webcams SET archive_until = ? WHERE webcam_id = ? AND customer_id = ?', [gmdate('Y-m-d', $now - 3 * 86400), $wPubA, $cA]);
+ok($get("$S/webcams/alpi-lago", $key($kCliA))['status'] === 404, 'cliente di prima: dopo archive_until la webcam non è più sua (404)');
 ok($get("$S/webcams/alpi-lago/photos?date=$today")['json']['photos'] === [], 'pubblico: solo dall\'inizio dell\'assegnazione in corso');
 ok((int) Db::scalar('SELECT COUNT(*) FROM customer_webcams WHERE webcam_id = ?', [$wPubA]) === 2 && (int) Db::scalar('SELECT customer_id FROM webcams WHERE id = ?', [$wPubA]) === $cB, 'storico: assegnazione chiusa e nuova aperta');
 ok(Customers::assign($wPubA, $cB) === false, 'stesso cliente: nessuna riga nuova');
