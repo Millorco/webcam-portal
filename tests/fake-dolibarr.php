@@ -5,7 +5,7 @@
  * FAKE_DOLIBARR_MODE=12: modulo 1.2 con gli endpoint v2 del contratto (ticket solo POST).
  * FAKE_DOLIBARR_MODE=13: modulo 1.3: GET portal, PUT tickets (open_for_rule,
  * close_refused, 403, 409), POST availability (409 sui mesi definitivi) e
- * GET /tickets/{id}. Ticket e mesi stanno in FAKE_DOLIBARR_STATE (JSON),
+ * GET /tickets/{id}, GET /thirdparties/57. Ticket e mesi stanno in FAKE_DOLIBARR_STATE (JSON),
  * condiviso tra i finti 1.2 e 1.3.
  * Ogni richiesta è aggiunta come riga JSON a FAKE_DOLIBARR_LOG.
  */
@@ -74,6 +74,10 @@ if ($mode === '13') {
 			'portal' => ['portal_slug' => 'x', 'url_current' => null, 'windy_published' => 0, 'windy_id' => null],
 			'sla' => ['enabled' => true, 'offline_hours' => 4, 'response_days' => 2, 'target_pct' => 97.5, 'hours' => '07:00-24:00', 'weekdays' => '123456'],
 			'shutter' => ['life' => 150000, 'warn_pct' => 85, 'used' => 48213, 'level' => ''], 'rttys' => (object) []]);
+		return;
+	}
+	if ($method === 'GET' && $path === '/thirdparties/57') {
+		echo json_encode(['id' => '57', 'name' => 'Impresa di prova', 'code_client' => 'CU2611-0042', 'email' => 'info@impresa.example', 'town' => 'Frascati', 'status' => '1']);
 		return;
 	}
 	if ($method === 'PUT' && preg_match('#^/webcams/12/tickets/(\d+)$#', $path, $m)) {

@@ -7,6 +7,7 @@ namespace WebcamPortal\Dolibarr;
 use WebcamPortal\Config;
 use WebcamPortal\Db;
 use WebcamPortal\Log;
+use WebcamPortal\Service\Customers;
 use WebcamPortal\Service\ServiceSettings;
 
 /**
@@ -14,7 +15,8 @@ use WebcamPortal\Service\ServiceSettings;
  * per ogni webcam (trovata per MAC) invia URL di current.jpg e Windy
  * (PUT webcams/{id}/portal), contatori della reflex e sintesi Victron
  * (POST webcams/{id}/counters) ed eventi con gravità >= warning
- * (POST webcams/{id}/events).
+ * (POST webcams/{id}/events); dal modulo 1.3 legge soglie e cliente della
+ * webcam (GET webcams/{id}/portal), che importa in customers.
  *
  * Con il modulo 1.1 gli endpoint v2 non esistono: si scrive nel log e si
  * prosegue senza errori.
@@ -26,7 +28,10 @@ final class Sync
 
 	/** Endpoint v2 trovati assenti in questo giro: non si riprovano. */
 	private array $missing = [];
-	public array $stats = ['webcams' => 0, 'linked' => 0, 'portal' => 0, 'settings' => 0, 'counters' => 0, 'events' => 0, 'availability' => 0, 'errors' => 0, 'missing_endpoints' => 0];
+	/** @var array<int,int> dolibarr_socid => customers.id già aggiornati in questo giro */
+	private array $customers = [];
+	private bool $noThirdparties = false;
+	public array $stats = ['webcams' => 0, 'linked' => 0, 'portal' => 0, 'settings' => 0, 'customers' => 0, 'counters' => 0, 'events' => 0, 'availability' => 0, 'errors' => 0, 'missing_endpoints' => 0];
 
 	public function __construct(private Client $client, private string $publicBaseUrl)
 	{
@@ -97,6 +102,10 @@ final class Sync
 		if (is_array($info) && isset($info['sla']) && !$dryRun) {
 			$this->saveSettings($wid, $info);
 			$this->stats['settings']++;
+		}
+		// 1c. cliente della webcam (soggetto terzo) per l'API dei siti
+		if (is_array($info) && array_key_exists('customer', $info) && !$dryRun) {
+			$this->saveCustomer($w, $info['customer']);
 		}
 
 		// 2. contatori e Victron
@@ -169,6 +178,54 @@ final class Sync
 		if (isset($info['ref']) && is_string($info['ref'])) {
 			Db::exec('UPDATE webcams SET dolibarr_ref = ? WHERE id = ?', [substr($info['ref'], 0, 128), $wid]);
 		}
+	}
+
+	/**
+	 * Cliente di GET webcams/{id}/portal -> customers (per dolibarr_socid) e
+	 * assegnazione della webcam con lo storico. Codice cliente, email e città
+	 * da GET thirdparties/{id} (API standard), se l'utente può leggere i terzi.
+	 * Dolibarr è la fonte: customer null toglie il cliente alla webcam.
+	 */
+	private function saveCustomer(array $w, mixed $c): void
+	{
+		$customerId = null;
+		if (is_array($c) && isset($c['id']) && (int) $c['id'] > 0) {
+			$socid = (int) $c['id'];
+			if (!isset($this->customers[$socid])) {
+				$data = ['name' => isset($c['name']) && is_string($c['name']) ? $c['name'] : null];
+				$data += $this->thirdparty($socid);
+				$this->customers[$socid] = Customers::upsertDolibarr($socid, $data);
+				$this->stats['customers']++;
+			}
+			$customerId = $this->customers[$socid];
+		}
+		if (Customers::assign((int) $w['id'], $customerId, 'dolibarr')) {
+			Log::info("webcam {$w['id']} ({$w['slug']}): cliente " . ($customerId === null ? 'tolto' : "$customerId") . ' da Dolibarr', self::LOG);
+		}
+	}
+
+	/** @return array{code?:?string, email?:?string, town?:?string} */
+	private function thirdparty(int $socid): array
+	{
+		if ($this->noThirdparties) {
+			return [];
+		}
+		try {
+			$t = $this->client->get("thirdparties/$socid");
+		} catch (DolibarrException $e) {
+			if ($e->status === 0 || $e->status >= 500) {
+				throw $e;
+			}
+			$this->noThirdparties = true;
+			Log::warning("GET thirdparties/$socid: {$e->status} {$e->apiMessage()}; per codice, email e città l'utente webcam-portal deve poter leggere i terzi", self::LOG);
+			return [];
+		}
+		if (!is_array($t)) {
+			return [];
+		}
+		$str = static fn ($v): ?string => is_string($v) && trim($v) !== '' ? trim($v) : null;
+		// "active" resta del pannello: un terzo chiuso in Dolibarr non spegne da solo le chiavi dei siti
+		return ['code' => $str($t['code_client'] ?? null), 'email' => $str($t['email'] ?? null), 'town' => $str($t['town'] ?? null)];
 	}
 
 	/**
