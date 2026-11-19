@@ -173,7 +173,9 @@ final class Metrics
 				$row['blur_ratio'] = min(99.999, round($s['sharpness_tiles'] / (float) $ref['sharpness_tiles'], 3));
 			}
 			if ($rimg !== null && $rimg['w'] === $img['w']) {
-				$row += Analyzer::shift($rimg, $img);
+				$mt = (float) Config::get()->value('photo_metrics.mask_top_pct', 6);
+				$mb = (float) Config::get()->value('photo_metrics.mask_bottom_pct', 6);
+				$row += Analyzer::shift(Analyzer::maskStrips($rimg, $mt, $mb), Analyzer::maskStrips($img, $mt, $mb));
 			}
 			$br = $row['blur_ratio'] ?? null;
 			$humid = ($row['rh_in'] !== null && (float) $row['rh_in'] >= 85) || ($row['spread_in'] !== null && $row['spread_in'] < 2);

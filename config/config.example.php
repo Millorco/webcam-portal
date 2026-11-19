@@ -82,6 +82,11 @@ return [
 		'memory_limit' => '512M',   // PHOTO_METRICS_MEMORY
 		'every_min' => 30,          // al massimo una foto analizzata ogni N minuti per webcam
 		'max_per_run' => 300,       // foto analizzate per esecuzione, tutte le webcam
+		// Strisce in alto e in basso (% dell'altezza) escluse dal controllo
+		// "camera mossa": lì di solito c'è la scritta con data e ora, che resta
+		// ferma anche se l'inquadratura si sposta. 0 = nessuna esclusione.
+		'mask_top_pct' => 6,
+		'mask_bottom_pct' => 6,
 	],
 
 	// Log dei router in VictoriaLogs (webcam-logserver, docs/query.md), sola

@@ -656,6 +656,30 @@ ok((int) Db::scalar('SELECT COUNT(*) FROM measurements_hourly WHERE webcam_id = 
 require __DIR__ . '/diagnosi.php';
 
 // ------------------------------------------------------------ errori del server
+section('Scritta sovrapposta e camera mossa');
+(function (): void {
+	mt_srand(3);
+	$w = 640; $h = 427;
+	$a = imagecreatetruecolor($w, $h);
+	for ($i = 0; $i < 400; $i++) {
+		imagefilledellipse($a, mt_rand(0, $w), mt_rand(60, $h), mt_rand(5, 40), mt_rand(5, 40), imagecolorallocate($a, mt_rand(0, 255), mt_rand(0, 255), mt_rand(0, 255)));
+	}
+	imagefilter($a, IMG_FILTER_GAUSSIAN_BLUR);
+	$b = imagecreatetruecolor($w, $h);
+	imagecopy($b, $a, 0, 0, 0, 0, $w, $h);
+	imagefilledrectangle($b, 0, 0, $w, 20, imagecolorallocate($b, 0, 0, 0));
+	imagestring($b, 5, 4, 3, 'Webcam di prova 19/11/2026 12:20  T 4.2C UR 81%', imagecolorallocate($b, 255, 255, 255));
+	$ga = \WebcamPortal\Photo\Analyzer::gray($a);
+	$gb = \WebcamPortal\Photo\Analyzer::gray($b);
+	$m = \WebcamPortal\Photo\Analyzer::shift(\WebcamPortal\Photo\Analyzer::maskStrips($ga, 6, 6), \WebcamPortal\Photo\Analyzer::maskStrips($gb, 6, 6));
+	ok($m['shift_x'] === 0 && $m['shift_y'] === 0 && $m['match_score'] >= 0.9, 'scritta in alto esclusa: nessuno spostamento', json_encode($m));
+	$c = imagecreatetruecolor($w, $h);
+	imagecopy($c, $a, 20, 0, 0, 0, $w - 20, $h);
+	$gc = \WebcamPortal\Photo\Analyzer::gray($c);
+	$m2 = \WebcamPortal\Photo\Analyzer::shift(\WebcamPortal\Photo\Analyzer::maskStrips($ga, 6, 6), \WebcamPortal\Photo\Analyzer::maskStrips($gc, 6, 6));
+	ok(abs($m2['shift_x'] - 20) <= 2, 'spostamento vero di 20 px ancora visto con le strisce escluse', json_encode($m2));
+})();
+
 section('Log');
 $logs = '';
 foreach (glob("$tmp/server-*.log") ?: [] as $f) {

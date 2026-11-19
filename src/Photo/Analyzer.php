@@ -296,6 +296,32 @@ final class Analyzer
 	}
 
 	/**
+	 * Copre con un grigio uniforme una striscia in alto e una in basso (in %
+	 * dell'altezza), dove di solito c'è la scritta con data, ora o logo: la
+	 * scritta resta ferma mentre il paesaggio si sposta e falserebbe shift().
+	 */
+	public static function maskStrips(array $img, float $topPct, float $bottomPct): array
+	{
+		$w = $img['w'];
+		$h = $img['h'];
+		$top = (int) round($h * max(0.0, min(40.0, $topPct)) / 100);
+		$bottom = (int) round($h * max(0.0, min(40.0, $bottomPct)) / 100);
+		if ($top === 0 && $bottom === 0) {
+			return $img;
+		}
+		$g = $img['g'];
+		for ($y = 0; $y < $h; $y++) {
+			if ($y >= $top && $y < $h - $bottom) {
+				continue;
+			}
+			for ($x = 0, $i = $y * $w; $x < $w; $x++, $i++) {
+				$g[$i] = 128;
+			}
+		}
+		return ['w' => $w, 'h' => $h, 'g' => $g];
+	}
+
+	/**
 	 * Spostamento della foto rispetto al riferimento (pixel a 640 px, + =
 	 * verso destra/il basso) e somiglianza 0-1.
 	 *
