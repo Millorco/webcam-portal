@@ -28,6 +28,8 @@ final class PhotoScores
 
 	public array $stats = ['scored' => 0, 'good' => 0, 'own' => 0, 'inherited' => 0, 'errors' => 0];
 	private int $budget;
+	/** @var list<array<string,mixed>> foto analizzate in questo giro (non ancora salvate) */
+	private array $recent = [];
 
 	public function __construct(private int $now)
 	{
@@ -87,6 +89,7 @@ final class PhotoScores
 			return;
 		}
 		$tz = ServiceSettings::tz($w);
+		$this->recent = [];
 		$every = max(1, (int) Config::get()->value('scores.every_min', 15)) * 60;
 		$p90 = $this->p90($wid);
 		$batch = [];
@@ -142,7 +145,14 @@ final class PhotoScores
 			$this->copy($pm, $s);
 			return (string) $pm['classification'];
 		}
-		$near = Db::one(
+		// prima le foto analizzate in questo giro, poi quelle già salvate
+		$near = null;
+		foreach ($this->recent as $o) {
+			if (abs($o['_t'] - $t) <= $every && ($near === null || abs($o['_t'] - $t) < abs($near['_t'] - $t))) {
+				$near = $o;
+			}
+		}
+		$near ??= Db::one(
 			"SELECT s.photo_id, s.brightness, s.contrast, s.sharpness_tiles, s.blur_ratio, m.classification
 			   FROM photo_scores s LEFT JOIN photo_metrics m ON m.photo_id = s.photo_id
 			  WHERE s.webcam_id = ? AND s.source IN ('metrics','own') AND s.brightness IS NOT NULL AND s.taken_at BETWEEN ? AND ?
@@ -175,6 +185,8 @@ final class PhotoScores
 			$s['contrast'] = $st['contrast'];
 			$s['sharpness_tiles'] = $st['sharpness_tiles'];
 			$this->stats['own']++;
+			$this->recent[] = ['_t' => $t, 'photo_id' => $s['photo_id'], 'brightness' => $s['brightness'], 'contrast' => $s['contrast'],
+				'sharpness_tiles' => $s['sharpness_tiles'], 'blur_ratio' => null, 'classification' => null];
 		} catch (\Throwable $e) {
 			Log::warning("foto {$r['id']} non analizzata per il punteggio: " . $e->getMessage(), self::LOG);
 			$s['source'] = 'own';

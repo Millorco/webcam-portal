@@ -29,8 +29,8 @@ final class PhotoOfDay
 		}
 		$min = preg_match('/^sunset\+(\d{1,3})$/', $spec, $m) ? (int) $m[1] : 45;
 		$end = Db::scalar(
-			"SELECT JSON_VALUE(meta, '$.day_end') FROM photos WHERE webcam_id = ? AND taken_at >= ? AND taken_at < ? AND deleted_at IS NULL
-			  ORDER BY taken_at DESC LIMIT 1",
+			"SELECT JSON_VALUE(meta, '$.day_end') FROM photos WHERE webcam_id = ? AND taken_at >= ? AND taken_at < ?
+			    AND JSON_VALUE(meta, '$.day_end') IS NOT NULL ORDER BY taken_at DESC LIMIT 1",
 			[$w['id'], Db::dt($start->getTimestamp()), Db::dt($start->modify('+1 day')->getTimestamp())]
 		);
 		if (is_numeric($end) && (int) $end > $start->getTimestamp() && (int) $end < $start->modify('+1 day')->getTimestamp()) {

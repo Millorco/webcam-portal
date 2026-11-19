@@ -30,6 +30,7 @@ final class Reports
 	private const NC_IT = ['time_unsynced' => 'ora non sincronizzata', 'sensor_missing' => 'sensore esterno assente', 'few_samples' => 'pochi campioni', 'few_photos' => 'poche foto'];
 
 	public array $stats = ['created' => 0, 'generated' => 0, 'sent' => 0, 'emailed' => 0, 'failed' => 0];
+	private bool $resend = false;
 
 	public function __construct(private int $now)
 	{
@@ -194,7 +195,7 @@ final class Reports
 		$other = (int) Db::scalar('SELECT COUNT(*) FROM monthly_reports WHERE webcam_id = ? AND month = ? AND id < ?', [$w['id'], $r['month'], $r['id']]);
 		$socid = Db::scalar('SELECT dolibarr_socid FROM customers WHERE id = ?', [$r['customer_id']]);
 		$name = 'rapporto-' . $r['month'] . ($other > 0 ? '-' . ($socid ?? $r['customer_id']) : '') . '.pdf';
-		$email = $emailOn && ((int) $r['email_requested'] === 0 || $overwrite) ? ['template' => 'report', 'link' => (string) Config::get()->value('reports.link_url', '')] : null;
+		$email = $emailOn && ((int) $r['email_requested'] === 0 || $this->resend) ? ['template' => 'report', 'link' => (string) Config::get()->value('reports.link_url', '')] + ($this->resend ? ['resend' => 1] : []) : null;
 		$this->send($w, $r, 'monthly_reports', $name, 'Rapporto mensile, ' . self::monthLabel((string) $r['month']), 'monthly_report', (string) $r['month'], 'report:' . $r['id'], $email, $overwrite);
 	}
 
@@ -215,7 +216,7 @@ final class Reports
 		}
 		$em = is_array($res['email'] ?? null) ? $res['email'] : null;
 		$sent = $em !== null && !empty($em['sent']); // sent: true con duplicate: true = già mandata
-		$status = $sent ? 'emailed' : 'sent';
+		$status = $sent || ($email === null && ($r['emailed_at'] ?? null) !== null) ? 'emailed' : 'sent'; // rigenerato senza email: resta emailed
 		$reason = $email === null ? null : ($sent ? null : (string) ($em['reason'] ?? 'no_email'));
 		$to = $em !== null && is_array($em['to'] ?? null) ? mb_substr(implode(', ', $em['to']), 0, 255) : null;
 		$extra = $table === 'monthly_reports' ? ', dolibarr_actioncomm_id = ?' : '';
@@ -242,10 +243,7 @@ final class Reports
 		if ($r === null) {
 			throw new \InvalidArgumentException('Documento inesistente');
 		}
-		if (!$resendEmail) {
-			Db::exec("UPDATE $table SET email_requested = 1 WHERE id = ?", [$id]);
-			$r['email_requested'] = 1;
-		}
+		$this->resend = $resendEmail; // senza: nessuna seconda email (send_email solo se non è mai stata chiesta)
 		$r['status'] = 'pending';
 		$kind === 'report' ? $this->doReport($r, true) : $this->doCertificate($r, true);
 	}
@@ -749,7 +747,7 @@ final class Reports
 			$period = $c['kind'] === 'month' ? substr((string) $c['period_from'], 0, 7) : $c['period_from'] . '_' . $c['period_to'];
 			$opt = Features::plan((int) $w['id'])['options'];
 			$emailOn = !isset($opt['report']['enabled']) || !empty($opt['report']['enabled']);
-			$email = $emailOn && ((int) $c['email_requested'] === 0 || $overwrite) ? ['template' => 'weather', 'link' => (string) Config::get()->value('reports.link_url', '')] : null;
+			$email = $emailOn && ((int) $c['email_requested'] === 0 || $this->resend) ? ['template' => 'weather', 'link' => (string) Config::get()->value('reports.link_url', '')] + ($this->resend ? ['resend' => 1] : []) : null;
 			$this->send($w, $c, 'weather_certificates', 'maltempo-' . $period . '.pdf', 'Giornate di maltempo certificate, ' . ($c['kind'] === 'month' ? self::monthLabel($period) : self::fmtDay((string) $c['period_from']) . ' - ' . self::fmtDay((string) $c['period_to'])),
 				'weather_certificate', $period, 'certificate:' . $id, $email, $overwrite);
 		} catch (\Throwable $e) {
