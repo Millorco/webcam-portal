@@ -9,6 +9,8 @@ use WebcamPortal\Config;
 use WebcamPortal\Db;
 use WebcamPortal\Http\Request;
 use WebcamPortal\Log;
+use WebcamPortal\Overlay\Overlay;
+use WebcamPortal\Overlay\Renderer;
 use WebcamPortal\Photo\Analyzer;
 use WebcamPortal\Photo\Metrics;
 use WebcamPortal\Service\PhotoStore;
@@ -128,7 +130,7 @@ final class Images
 		}
 		\WebcamPortal\Api\RateLimiter::hitBucket('img-' . sha1($req->clientIp()), (int) Config::get()->value('site_api.image_rate_limit_per_min', 1200));
 		$p = Db::one(
-			'SELECT p.id, p.webcam_id, p.sha256, p.taken_at, p.storage_path, p.width, p.height, w.is_public, w.status
+			'SELECT p.id, p.webcam_id, p.sha256, p.taken_at, p.time_synced, p.t_ext, p.rh_ext, p.storage_path, p.width, p.height, w.is_public, w.status
 			   FROM photos p JOIN webcams w ON w.id = p.webcam_id
 			  WHERE p.id = ? AND p.deleted_at IS NULL AND p.is_public = 1',
 			[$photoId]
@@ -138,7 +140,9 @@ final class Images
 			throw new ApiError(404, 'not_found', 'Foto inesistente');
 		}
 		$public = (int) $p['is_public'] === 1 && (int) $p['status'] === 1;
-		$etag = '"' . substr((string) $p['sha256'], 0, 32) . '-' . $size . '"';
+		$w = $size === 'orig' || $size === '320' ? null : Db::one('SELECT * FROM webcams WHERE id = ?', [$p['webcam_id']]);
+		$ov = $w === null ? null : self::overlayFor($w, $size);
+		$etag = '"' . substr((string) $p['sha256'], 0, 32) . '-' . $size . ($ov !== null ? '-o' . (int) $ov['overlay_rev'] : '') . '"';
 		$cache = ($public ? 'public' : 'private') . ', max-age=' . max(60, min(31536000, (int) $exp - $now)) . ', immutable';
 		$takenAt = (int) Db::unix((string) $p['taken_at']);
 		header('ETag: ' . $etag);
@@ -152,7 +156,7 @@ final class Images
 			http_response_code(304);
 			return;
 		}
-		$file = $size === 'orig' ? $orig : self::variant($p, $orig, (int) $size);
+		$file = $size === 'orig' ? $orig : self::derived($p, $orig, $size, $w, $ov);
 		$len = @filesize($file);
 		if ($len === false) {
 			throw new ApiError(404, 'not_found', 'Foto inesistente');
@@ -162,6 +166,119 @@ final class Images
 		header('Content-Length: ' . $len);
 		if ($req->method !== 'HEAD') {
 			readfile($file);
+		}
+	}
+
+	/** Formati per i social (api-siti-v1.md 1.1): nome nell'URL => [larghezza, altezza]. */
+	public const SOCIAL = ['sq1080' => [1080, 1080], 'p1350' => [1080, 1350], 's1920' => [1080, 1920]];
+	public const SOCIAL_NAMES = ['square' => 'sq1080', 'portrait' => 'p1350', 'story' => 's1920'];
+
+	/**
+	 * Configurazione della sovrimpressione da applicare a questa dimensione
+	 * ("640", "1280", "1920", formati social, "current", "timelapse"), o null.
+	 */
+	public static function overlayFor(array $w, string $size): ?array
+	{
+		$cfg = Overlay::active($w);
+		$what = isset(self::SOCIAL[$size]) ? 'social' : $size;
+		return Overlay::appliesTo($cfg, $what) ? $cfg : null;
+	}
+
+	/**
+	 * File derivato di una foto: riduzione (320-1920) o formato social, con la
+	 * sovrimpressione se $ov non è null. In cache accanto alle riduzioni
+	 * senza sovrimpressione (<id>-<size>-o<overlay_rev>.jpg).
+	 */
+	public static function derived(array $p, string $orig, string $size, ?array $w = null, ?array $ov = null): string
+	{
+		$social = self::SOCIAL[$size] ?? null;
+		if ($social === null && $ov === null) {
+			return self::variant($p, $orig, (int) $size);
+		}
+		$name = $size . ($ov !== null ? '-o' . (int) $ov['overlay_rev'] : '');
+		$file = self::cacheFile((int) $p['webcam_id'], (int) $p['id'], $name);
+		if (is_file($file)) {
+			if ((int) @filemtime($file) < time() - 86400) {
+				@touch($file);
+			}
+			return $file;
+		}
+		$w ??= (array) Db::one('SELECT * FROM webcams WHERE id = ?', [$p['webcam_id']]);
+		if ($social !== null) {
+			$tp = \WebcamPortal\Service\Timelapse::params((int) $p['webcam_id']);
+			$im = self::cropped($orig, $social[0], $social[1], (float) $tp['crop_x_pct'], 50.0);
+		} else {
+			$base = self::variant($p, $orig, (int) $size);
+			$im = self::open($base);
+		}
+		try {
+			if ($ov !== null) {
+				self::drawOverlay($im, $w, $p, $ov, $social === null);
+			}
+			self::saveJpeg($im, $file, (int) Config::get()->value('overlay.jpeg_quality', 85));
+		} finally {
+			imagedestroy($im);
+		}
+		return $file;
+	}
+
+	/** Disegna sovrimpressione, sponsor e (sull'immagine intera) infopoint. */
+	public static function drawOverlay(\GdImage $im, array $w, array $p, array $cfg, bool $points = true): void
+	{
+		if (!array_key_exists('t_ext', $p) || !array_key_exists('time_synced', $p) || !isset($p['taken_at'])) {
+			$p = array_merge($p, (array) Db::one('SELECT taken_at, time_synced, t_ext, rh_ext FROM photos WHERE id = ?', [$p['id']]));
+		}
+		$infop = array_values(array_filter(Overlay::items($w, 'infopoint'), static fn ($i) => (int) $i['burn'] === 1));
+		Renderer::draw($im, $w, $p, $cfg, Overlay::burnedSponsors($w), $infop, $points);
+	}
+
+	/** Apre un JPEG controllando la memoria (503 image_too_large se non basta). */
+	public static function open(string $file): \GdImage
+	{
+		Metrics::prepareMemory();
+		try {
+			return Analyzer::loadJpeg($file);
+		} catch (\WebcamPortal\Photo\MemoryException $e) {
+			Log::warning('immagine ' . basename($file) . ' saltata: ' . $e->getMessage() . '; alzare photo_metrics.memory_limit', 'site-api');
+			throw new ApiError(503, 'image_too_large', 'Foto troppo grande per la memoria disponibile', ['Retry-After' => '300']);
+		} catch (\RuntimeException $e) {
+			throw new ApiError(404, 'not_found', 'Foto illeggibile');
+		}
+	}
+
+	/**
+	 * Ritaglio al formato $tw x $th: finestra alta (o larga) quanto l'immagine,
+	 * centro a cx/cy (% 0-100), poi riduzione. Mai ingrandire oltre la finestra.
+	 */
+	public static function cropped(string $src, int $tw, int $th, float $cx = 50.0, float $cy = 50.0): \GdImage
+	{
+		$im = self::open($src);
+		$w = imagesx($im);
+		$h = imagesy($im);
+		$ratio = $tw / $th;
+		if ($w / $h > $ratio) {
+			$ch = $h;
+			$cw = (int) round($h * $ratio);
+		} else {
+			$cw = $w;
+			$ch = (int) round($w / $ratio);
+		}
+		$x = (int) round(max(0, min($w - $cw, ($w - $cw) * max(0, min(100, $cx)) / 100)));
+		$y = (int) round(max(0, min($h - $ch, ($h - $ch) * max(0, min(100, $cy)) / 100)));
+		$out = imagecreatetruecolor($tw, $th);
+		imagecopyresampled($out, $im, 0, 0, $x, $y, $tw, $th, $cw, $ch);
+		imagedestroy($im);
+		return $out;
+	}
+
+	public static function saveJpeg(\GdImage $im, string $dst, int $quality, bool $progressive = true): void
+	{
+		PhotoStore::ensureDir($dst);
+		imageinterlace($im, $progressive);
+		$tmp = $dst . '.' . getmypid() . '.tmp';
+		if (!imagejpeg($im, $tmp, max(30, min(95, $quality))) || !@rename($tmp, $dst)) {
+			@unlink($tmp);
+			throw new \RuntimeException("Impossibile scrivere $dst");
 		}
 	}
 
@@ -263,8 +380,8 @@ final class Images
 	/** Toglie le riduzioni di una foto (retention). */
 	public static function forget(int $webcamId, int $photoId): void
 	{
-		foreach (self::SIZES as $s) {
-			@unlink(self::cacheFile($webcamId, $photoId, (string) $s));
+		foreach (glob(dirname(self::cacheFile($webcamId, $photoId, 'x')) . '/' . $photoId . '-*.jpg') ?: [] as $f) {
+			@unlink($f); // riduzioni, formati social e versioni con sovrimpressione
 		}
 	}
 

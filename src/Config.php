@@ -47,6 +47,11 @@ final class Config
 		'SITE_ANON_RATE_LIMIT_PER_MIN' => 'site_api.anon_rate_limit_per_min',
 		'SITE_URL_SECRET' => 'site_api.url_secret',
 		'SITE_CACHE_DAYS' => 'site_api.cache_days',
+		'FFMPEG_PATH' => 'ffmpeg.path',
+		'TELEGRAM_BOT_TOKEN' => 'telegram.bot_token',
+		'TELEGRAM_WEBHOOK_SECRET' => 'telegram.webhook_secret',
+		'TELEGRAM_ENABLED' => 'telegram.enabled',
+		'TELEGRAM_MODE' => 'telegram.mode',
 	];
 
 	/** @param array<string,mixed> $values */

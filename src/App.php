@@ -32,7 +32,7 @@ final class App
 			SiteApi::handle($req);
 			return;
 		}
-		if (preg_match('#^/img/(\d{1,19})/(320|640|1280|1920|orig)\.jpg$#', $path, $m)) {
+		if (preg_match('#^/img/(\d{1,19})/(320|640|1280|1920|orig|sq1080|p1350|s1920)\.jpg$#', $path, $m)) {
 			self::image($req, (int) $m[1], $m[2]);
 			return;
 		}

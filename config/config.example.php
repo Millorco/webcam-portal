@@ -120,5 +120,78 @@ return [
 		// bin/retention-photos.php (si rifanno alla richiesta successiva).
 		'cache_days' => 30,                 // SITE_CACHE_DAYS
 		'series_max_days' => 400,           // intervallo massimo di /series
+		// 1.1: URL firmati di rapporti, certificati ed elenchi del registro (/media/rep|cert|reg/...)
+		'document_url_ttl' => 86400,        // validità, secondi (arrotondata all'ora)
+	],
+
+	// ------------------------------------------------------------ servizi (contratto 1.3, servizi-v1.md)
+	// Quali servizi ha comprato una webcam lo dice il listino di Dolibarr
+	// (livello base/standard/pro e opzioni, bin/sync-dolibarr.php); qui c'è
+	// quello che il server sa fare. Ogni sezione si spegne con enabled => false.
+
+	// ffmpeg per i timelapse (solo i video). Senza ffmpeg i timelapse nuovi non
+	// si fanno (messaggio nel pannello, whoami.server.timelapse = false) e tutto
+	// il resto funziona. In XAMPP di solito non c'è; nell'immagine Docker sì.
+	'ffmpeg' => [
+		'path' => '',           // FFMPEG_PATH: '' = "ffmpeg" nel PATH; percorso assoluto (anche C:\ffmpeg\bin\ffmpeg.exe); 'off' = spento
+		'timeout' => 1800,      // secondi per un video
+		'threads' => 1,
+		'nice' => 10,           // solo Linux
+	],
+
+	// Sovrimpressione di dati e logo (M2) e sponsor (M12) sulle immagini derivate:
+	// l'originale non si tocca mai.
+	'overlay' => [
+		'enabled' => true,
+		'font' => '',           // TTF; '' = assets/fonts/DejaVuSans.ttf
+		'font_bold' => '',      // '' = assets/fonts/DejaVuSans-Bold.ttf
+		'jpeg_quality' => 85,
+	],
+
+	// Punteggio delle foto "buone" (O8), bin/photo-scores.php.
+	'scores' => [
+		'every_min' => 15,      // al più una foto analizzata per il punteggio ogni N minuti per webcam
+		'max_per_run' => 400,
+	],
+
+	// Timelapse (M7), bin/timelapse.php.
+	'timelapse' => [
+		'enabled' => true,
+		'temp_dir' => '',       // '' = storage/tmp/timelapse
+		// giorni di conservazione per tipo; 0 = finché c'è l'archivio
+		'keep_days' => ['day' => 30, 'week' => 180, 'month' => 0, 'custom' => 90, 'final' => 0],
+	],
+
+	// Foto del giorno (M11): HH:MM locale o sunset+<minuti> (dal tramonto dell'ultima foto).
+	'photo_of_day' => ['enabled' => true, 'time' => 'sunset+45'],
+
+	// Rapporto mensile (O3): il giorno "day" del mese dopo alle "time" locali.
+	// link_url: pagina del cliente stampata nel PDF (es. il sottosito del portale clienti).
+	'reports' => ['enabled' => true, 'day' => 3, 'time' => '06:00', 'link_url' => ''],
+
+	// Giornate di maltempo (O2): soglie predefinite, cambiabili per webcam nel pannello.
+	'weather' => [
+		'enabled' => true,
+		'params' => [],         // es. ['rh_wet' => 96, 'min_wet_hours' => 3]
+	],
+
+	// Archivio dopo il noleggio (M13) senza opzione di Dolibarr: giorni dalla fine dell'assegnazione.
+	'archive' => ['default_days' => 30],
+
+	// Statistiche di visualizzazione (M8), senza IP in chiaro né cookie.
+	'stats' => ['enabled' => true, 'dedupe_min' => 30],
+
+	// Bot Telegram (O10). Il token si crea con BotFather e non va mai nel codice:
+	// qui in config.php (ignorato da git) o nella variabile d'ambiente.
+	'telegram' => [
+		'enabled' => false,
+		'bot_token' => '',              // TELEGRAM_BOT_TOKEN (mai nei log)
+		'mode' => 'poll',               // 'webhook' (VPS, URL pubblico) o 'poll' (XAMPP)
+		'webhook_secret' => '',         // TELEGRAM_WEBHOOK_SECRET, 32+ caratteri casuali
+		'api_url' => 'https://api.telegram.org', // solo per prove
+		'code_ttl_days' => 7,
+		'quiet_hours' => '22:00-07:00', // ora locale della webcam; '' = nessuna
+		'daily_limit' => 20,
+		'forget_days' => 30,
 	],
 ];
