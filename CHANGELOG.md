@@ -1,6 +1,22 @@
 # Changelog
 
-## Non rilasciato
+## 0.2.0 - 2026-11-19
+
+Fase 2 di Webcam 2.0 (assistenza automatica), secondo il contratto dei dati 1.1.
+
+- Migrazione 002 (`migrations/002_diagnosi.sql`): avvisi, stato delle regole, comandi, metriche e riferimenti delle foto, contatori dei log, disponibilità, impostazioni di servizio; campi `telemetry/1` di luci-app-webcam 1.2.0 (`heater_on_since`, `heater_duty_pct`, `heat_reason`, `heater_boost_until`, `dewpoint_margin`, `camera.scheduled`, `camera.interval_min`).
+- `bin/rules.php`: motore delle 12 regole di diagnosi con stato, durate minime, isteresi, chiusura automatica, riapertura entro 24 ore, gravità solo in salita, dipendenza `camera.stalled`/`telemetry.stalled`, scadenze dell'impegno di disponibilità, `--now` per ricalcolare. `bin/diagnose.php` è un alias.
+- `bin/photo-metrics.php`: nitidezza (varianza del laplaciano), luminosità, confronto col riferimento della stessa ora e spostamento con GD su una copia a 640 px; riferimenti automatici; `memory_limit` configurabile (foto saltata e scritta nel log se non basta). Regole `glass.fog` (manda `heater.boost`), `glass.dirty`, `camera.moved`.
+- Comandi al router `command/1`: coda, consegna nelle risposte e in `GET /api/v1/commands` solo con `X-Webcam-Features: commands/1` e scope `commands`, scadenza, `command.ack`, validazione con la lista chiusa del contratto.
+- Ticket Dolibarr per avviso (modulo 1.3: `open_for_rule`, `close_refused`, 403, 409, `GET /tickets/{id}`), idempotenti; con il modulo 1.2 messaggi e chiusure restano in coda.
+- Disponibilità oraria, giornaliera e mensile (definitiva dal 3 del mese dopo), inviata a Dolibarr; soglie `sla_*` da `GET webcams/{id}/portal`; `bin/availability.php`.
+- Client VictoriaLogs (una `stats_query` ogni 15 minuti) e regole `logs.reboots`, `logs.camera_errors` per hostname.
+- Pannello: pagina Avvisi con filtri, dettaglio (presa in carico, chiusura, silenzio), stato delle regole, comandi, grafico della nitidezza a 7 giorni, riferimenti, disponibilità, impostazioni di servizio; disponibilità facoltativa sulla pagina pubblica.
+- Simulatore 1.2.0: `--dal/--al`, `--foto-ogni`, `--scenario guarnizione|riscaldamento|sole|vetro-appannato|vetro-sporco|camera-mossa|camera-ferma` con `--guasto-dal/--guasto-al`, comandi `commands/1` con `command.ack`, `shutter_count`.
+- Test della fase 2 in `tests/diagnosi.php`, finto Dolibarr 1.3 e finta VictoriaLogs.
+- Contratto 1.1 corretto: righe finali per `logs.camera_errors`, hostname `WC-<MAC>`, `sla_hours` fino a `24:00`, intervalli stretti per `config.set`, ack `protection`, `result` di `heater.cancel`.
+
+## Contratto 1.1 (documentazione, prima della 0.2)
 
 - Contratto dei dati 1.1 (fase 2, assistenza automatica), solo documentazione: regole di diagnosi `docs/contratto/diagnosi-v1.md`, migrazione 2 `docs/contratto/schema-mariadb-002.sql`, comandi al router `command/1` (`comando-v1.schema.json`, risposte delle API e `GET /api/v1/commands`, evento `command.ack`), campi di diagnosi facoltativi in `telemetry/1`, API Dolibarr documento 2.1 (modulo 1.3: soglie del contratto di noleggio, ticket per regola, disponibilità mensile). Il codice arriva con la 0.2.
 

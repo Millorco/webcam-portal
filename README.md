@@ -9,9 +9,9 @@ Portale di Webcam 2.0 (Viewlapse): riceve dai router con [luci-app-webcam](https
 
 ## Contratto dei dati
 
-Formati JSON, API e schema del database comuni a tutte le repository: [docs/contratto/](docs/contratto/README.md). Le API implementate sono esattamente quelle di [api-portal-v1.md](docs/contratto/api-portal-v1.md). Il contratto è ora alla versione 1.1 (fase 2: [diagnosi](docs/contratto/diagnosi-v1.md), comandi al router, disponibilità, migrazione [002](docs/contratto/schema-mariadb-002.sql)): il portal 0.1 implementa la 1.0, le aggiunte arrivano con la 0.2.
+Formati JSON, API e schema del database comuni a tutte le repository: [docs/contratto/](docs/contratto/README.md). Le API implementate sono esattamente quelle di [api-portal-v1.md](docs/contratto/api-portal-v1.md). Il portal 0.2 implementa il contratto 1.1 (fase 2: [diagnosi](docs/contratto/diagnosi-v1.md), comandi al router, disponibilità, migrazione [002](docs/contratto/schema-mariadb-002.sql)).
 
-## Cosa fa (versione 0.1)
+## Cosa fa (versione 0.2)
 
 | Funzione | Dove |
 |---|---|
@@ -24,7 +24,20 @@ Formati JSON, API e schema del database comuni a tutte le repository: [docs/cont
 | Pannello operatori `/admin/`: elenco webcam, scheda con foto, misure, grafici 24 ore, eventi, contatori, modifica, creazione webcam, rigenerazione token | `src/Admin/` |
 | Medie orarie, partizioni mensili, retention delle foto | `bin/aggregate-hourly.php`, `bin/partitions.php`, `bin/retention-photos.php` |
 | Sincronizzazione Dolibarr (contatori, Victron, URL `current.jpg`, eventi importanti) | `bin/sync-dolibarr.php`, `src/Dolibarr/` |
-| Router simulato per l'anteprima | `tools/simula-router.php` |
+| Router simulato per l'anteprima e i test, con scenari di guasto e comandi | `tools/simula-router.php` |
+
+Fase 2 (assistenza automatica, 0.2):
+
+| Funzione | Dove |
+|---|---|
+| Motore delle regole di [diagnosi-v1.md](docs/contratto/diagnosi-v1.md): stato per regola (`rule_state`), durate minime, isteresi, chiusura automatica, riapertura entro 24 ore, gravità solo in salita, `camera.stalled` sospesa mentre è aperto `telemetry.stalled`, scadenze dell'impegno di disponibilità | `bin/rules.php`, `src/Rules/` |
+| 12 regole: `telemetry.stalled`, `camera.stalled`, `enclosure.seal`, `enclosure.heater`, `enclosure.overheat`, `enclosure.fan`, `glass.fog` (manda `heater.boost`), `glass.dirty`, `camera.moved`, `shutter.life`, `logs.reboots`, `logs.camera_errors` | `src/Rules/Rule/` |
+| Metriche foto con GD su una copia a 640 px (nitidezza = varianza del laplaciano, mediana su 16 riquadri, luminosità, spostamento rispetto al riferimento della stessa ora), foto di riferimento scelte in automatico, `memory_limit` configurabile | `bin/photo-metrics.php`, `src/Photo/` |
+| Comandi al router `command/1`: coda per webcam, consegna nelle risposte di `/photo`, `/telemetry`, `/event` e in `GET /api/v1/commands` (solo con `X-Webcam-Features: commands/1` e scope `commands`), scadenza, `command.ack`, lista chiusa di tipi e valori | `src/Service/Commands.php` |
+| Ticket Dolibarr per avviso (modulo 1.3: apertura, messaggi, chiusura, stato con `GET /tickets/{id}`), testo con dati, link al portal e a rttys; con il modulo 1.2 si apre solo il ticket e il resto resta in coda | `src/Dolibarr/TicketSync.php` |
+| Disponibilità per ora, giorno e mese (definitiva dal 3 del mese dopo), inviata con `POST webcams/{id}/availability`; soglie `sla_*` da `GET webcams/{id}/portal` | `bin/availability.php`, `src/Service/Availability.php` |
+| Conteggi dei log da VictoriaLogs (riavvii, errori finali della fotocamera, tentativi) per hostname | `src/Logs/` |
+| Pannello: pagina Avvisi (aperti/chiusi, filtri per webcam e regola), dettaglio con presa in carico, chiusura e silenzio della regola; nella scheda stato delle regole, comandi (Scatta ora, Riscaldamento 30 min, Invia telemetria), nitidezza degli ultimi 7 giorni, riferimenti per fascia, disponibilità e impostazioni di servizio | `src/Admin/DiagnosisPages.php`, `templates/admin/` |
 
 ## Struttura
 
@@ -37,7 +50,7 @@ migrations/        001_schema.sql = schema del contratto; tabella schema_migrati
 bin/               script da riga di comando e cron
 tools/             simula-router.php
 storage/           foto, log, sessioni (fuori da public/, ignorato da git)
-tests/             run.php (test senza PHPUnit), fake-dolibarr.php
+tests/             run.php e diagnosi.php (test senza PHPUnit), fake-dolibarr.php, fake-victorialogs.php
 docker/, Dockerfile, docker-compose.yml   per il VPS
 ```
 
@@ -147,18 +160,24 @@ NPM manda `X-Forwarded-Proto: https`: con `TRUST_PROXY=true` (predefinito nel co
 
 | Script | Quando | Cosa fa |
 |---|---|---|
+| `bin/rules.php` | ogni 5 minuti | regole di diagnosi, comandi delle regole, VictoriaLogs (al più ogni 15 minuti), ticket Dolibarr (`--webcam`, `--regole`, `--logs`, `--now`, `--senza-dolibarr`) |
+| `bin/photo-metrics.php` | ogni 5 minuti | metriche delle foto nuove (una ogni 30 minuti per webcam) e regole delle foto (`--webcam`, `--now`, `--senza-regole`) |
+| `bin/availability.php` | ogni ora, al minuto 20 | disponibilità di oggi e dei 7 giorni prima, mesi provvisori e definitivi (`--webcam`, `--dal`, `--al`, `--now`) |
 | `bin/aggregate-hourly.php` | ogni ora, al minuto 5 | ricalcola le medie orarie delle ultime 3 ore (`--ore N`, `--dal AAAA-MM-GG --al ...`) |
-| `bin/sync-dolibarr.php` | ogni ora, al minuto 15 | invia a Dolibarr contatori, Victron, URL `current.jpg`, eventi ≥ warning |
+| `bin/sync-dolibarr.php` | ogni ora, al minuto 15 | invia a Dolibarr contatori, Victron, URL `current.jpg`, eventi in agenda, disponibilità; legge le soglie `sla_*`; ticket; riprova gli endpoint mancanti |
 | `bin/partitions.php` | ogni giorno alle 03:10 | crea le partizioni dei prossimi 2 mesi, cancella quelle oltre 12 mesi (`--prova`, `--elenco`) |
 | `bin/retention-photos.php` | ogni giorno alle 03:30 | originali oltre 90 giorni: tiene una foto l'ora (`--giorni N`, `--prova`) |
 
-I risultati finiscono in `storage/logs/cron.log` e `storage/logs/sync-dolibarr.log`.
+I risultati finiscono in `storage/logs/cron.log`, `rules.log`, `photo-metrics.log`, `availability.log` e `sync-dolibarr.log`. `rules.php` e `photo-metrics.php` hanno un lucchetto: se un giro è ancora in corso il successivo salta.
 
 ### Linux (VPS, crontab dell'host)
 
 `crontab -e` (con Docker gli script girano nel container):
 
 ```cron
+*/5 * * * * docker exec -u www-data webcam-portal php bin/rules.php         >/dev/null 2>&1
+2-59/5 * * * * docker exec -u www-data webcam-portal php bin/photo-metrics.php >/dev/null 2>&1
+20 * * * *  docker exec -u www-data webcam-portal php bin/availability.php   >/dev/null
 5  * * * *  docker exec -u www-data webcam-portal php bin/aggregate-hourly.php >/dev/null
 15 * * * *  docker exec -u www-data webcam-portal php bin/sync-dolibarr.php   >/dev/null 2>&1
 10 3 * * *  docker exec -u www-data webcam-portal php bin/partitions.php      >/dev/null
@@ -180,13 +199,19 @@ schtasks /Create /TN "webcam-portal retention foto" /SC DAILY /ST 03:30 ^
   /TR "C:\xampp\php\php.exe C:\xampp\htdocs\webcam-portal\bin\retention-photos.php"
 schtasks /Create /TN "webcam-portal Dolibarr" /SC HOURLY /MO 1 /ST 00:15 ^
   /TR "C:\xampp\php\php.exe C:\xampp\htdocs\webcam-portal\bin\sync-dolibarr.php"
+schtasks /Create /TN "webcam-portal regole" /SC MINUTE /MO 5 ^
+  /TR "C:\xampp\php\php.exe C:\xampp\htdocs\webcam-portal\bin\rules.php"
+schtasks /Create /TN "webcam-portal metriche foto" /SC MINUTE /MO 5 ^
+  /TR "C:\xampp\php\php.exe C:\xampp\htdocs\webcam-portal\bin\photo-metrics.php"
+schtasks /Create /TN "webcam-portal disponibilita" /SC HOURLY /MO 1 /ST 00:20 ^
+  /TR "C:\xampp\php\php.exe C:\xampp\htdocs\webcam-portal\bin\availability.php"
 ```
 
 Oppure dall'interfaccia: *Utilità di pianificazione → Crea attività di base*, programma `C:\xampp\php\php.exe`, argomento il percorso dello script, "Inizia da" `C:\xampp\htdocs\webcam-portal`.
 
 ## Dolibarr
 
-`bin/sync-dolibarr.php` usa l'utente API `webcam-portal` (vedi [api-dolibarr-v2.md](docs/contratto/api-dolibarr-v2.md): permessi Webcam → Leggere e Sincronizzare dal portal, Agenda → creare, Soggetti terzi → leggere ed *Estendi l'accesso a tutti i terzi*). In `config.php`:
+`bin/sync-dolibarr.php` usa l'utente API `webcam-portal` (vedi [api-dolibarr-v2.md](docs/contratto/api-dolibarr-v2.md): permessi Webcam → Leggere e Sincronizzare dal portal, Agenda → creare, **Ticket → Leggere e Creare** (Leggere serve dal modulo 1.3 per lo stato dei ticket con `GET /tickets/{id}`), Soggetti terzi → leggere ed *Estendi l'accesso a tutti i terzi*). In `config.php`:
 
 ```php
 'dolibarr' => [
@@ -197,9 +222,29 @@ Oppure dall'interfaccia: *Utilità di pianificazione → Crea attività di base*
 
 Per ogni webcam non ritirata: la cerca per MAC (`GET webcams/bymac/9483c412abcd`, MAC senza separatori perché il WAF di Dolibarr rifiuta `:`; con il modulo 1.1 ripiega su `GET webcams?sqlfilters=...`), salva `dolibarr_id`, poi `PUT webcams/{id}/portal` (slug, `url_current`, Windy), `POST webcams/{id}/counters` (contatori reflex, tensione batteria attuale e minima 24 h, fase di carica, resa di ieri, errore Victron) e `POST webcams/{id}/events` per gli eventi con gravità ≥ warning non ancora inviati. Se il modulo è ancora alla 1.1 gli endpoint v2 non esistono: lo scrive una volta nel log e prosegue, con codice di uscita 0. Chiave sbagliata o Dolibarr spento: errore nel log, uscita 1, nessun crash.
 
+Con il modulo 1.3, a ogni giro:
+
+- `GET webcams/{id}/portal` copia in `webcam_service` le soglie del contratto di noleggio (`sla_*`), la vita dell'otturatore e i link rttys; finché la webcam non ne ha, le soglie si impostano nella scheda del pannello.
+- `POST webcams/{id}/availability` manda il mese provvisorio una volta al giorno e il definitivo il 3 del mese dopo. Un `409` su un mese già definitivo vuol dire "già registrato".
+- I ticket seguono gli avvisi con azione *ticket*: `POST webcams/{id}/tickets` all'apertura (con `portal_rule` e `portal_alert_id`; se Dolibarr ha già un ticket aperto per la regola risponde `open_for_rule` e il portal lo usa), `PUT webcams/{id}/tickets/{ticket_id}` per i messaggi e la chiusura (`close_refused: in_progress` se qualcuno ci sta lavorando: resta aperto; `409` se è già chiuso e `403` se non è un ticket del portal: non si riprova), `GET /tickets/{id}` per sapere se l'operatore l'ha chiuso.
+- La descrizione ha i dati misurati, cosa controllare, il link all'avviso nel portal e i link rttys (`rttys_url` + `/api/connect/<ref Dolibarr>`, se Dolibarr non li manda).
+
+`bin/rules.php` sincronizza i ticket subito dopo le regole. Con il modulo 1.2 si apre il ticket ma messaggi e chiusure restano in coda: lo scrive nel log una volta ogni 6 ore, e `sync-dolibarr.php` riprova una volta l'ora.
+
+## Diagnosi
+
+- Soglie: quelle di [diagnosi-v1.md](docs/contratto/diagnosi-v1.md); si cambiano per tutte le webcam in `config.php` (`rules.params`, es. `'glass.fog' => ['boost_s' => 1200]`) o per webcam nella tabella `rule_config`. `rules.disabled` spegne una regola per tutte.
+- Le regole valutano solo i dati fino all'ora di `--now`: `php bin/rules.php --now "2026-11-18 15:00"` ricalcola com'era quel momento.
+- Metriche foto: GD lavora su una copia in grigi a 640 px; un JPEG da 24 Mpx decompresso occupa circa 125 MB, quindi `photo_metrics.memory_limit` (predefinito `512M`, variabile `PHOTO_METRICS_MEMORY`). Se la memoria non basta la foto si salta con `skip_reason = memory` e una riga nel log. Le foto di notte e quelle troppo scure o bruciate non si analizzano.
+- Riferimenti: per ogni ora del giorno la foto più nitida degli ultimi 14 giorni con il secco, rinnovata ogni 7 giorni, mai mentre è aperto un avviso del vetro o dell'inquadratura. Dal pannello: *ricalcola* una fascia, *usa come riferimento* una foto, *conferma la nuova inquadratura* (azzera tutti i riferimenti).
+- VictoriaLogs ([webcam-logserver](https://github.com/Millorco/webcam-logserver), `docs/query.md`): in `config.php` `victorialogs.url` (es. `http://victorialogs:9428`), `user`, `pass`, `timeout` (5 s), o le variabili `VICTORIALOGS_URL`, `VICTORIALOGS_USER`, `VICTORIALOGS_PASS`, `VICTORIALOGS_TIMEOUT`. Vuoto = spento: le regole `logs.*` usano solo gli eventi. Una sola `stats_query` ogni 15 minuti per tutte le webcam, legate per `webcams.hostname` (`WC-<MAC>`); un hostname senza righe vale 0, uno usato da due webcam dà "dati insufficienti".
+- Disponibilità pubblica: con `availability_public = true` (variabile `AVAILABILITY_PUBLIC`) la pagina `/cam/{slug}/` delle webcam pubbliche mostra la disponibilità del mese.
+
 ## Test
 
-`tests/run.php` (senza PHPUnit) ricrea lo schema in un database di prova (il nome deve finire con `_test`), avvia il portal con `php -S` e un finto Dolibarr (moduli 1.1 e 1.2), e prova autenticazione, foto (idempotenza, SHA-256, limiti, `photo/0`), `current.jpg`/`current.json`/304, telemetria (idempotenza, validazione per campione, gzip, limiti, eventi del portal), eventi, limite di frequenza, medie orarie, partizioni, retention, sincronizzazione Dolibarr, pannello e simulatore.
+`tests/run.php` (senza PHPUnit) ricrea lo schema in un database di prova (il nome deve finire con `_test`), avvia il portal con `php -S` e un finto Dolibarr (moduli 1.1, 1.2 e 1.3), e prova autenticazione, foto (idempotenza, SHA-256, limiti, `photo/0`), `current.jpg`/`current.json`/304, telemetria (idempotenza, validazione per campione, gzip, limiti, eventi del portal), eventi, limite di frequenza, medie orarie, partizioni, retention, sincronizzazione Dolibarr, pannello e simulatore.
+
+`tests/diagnosi.php` (incluso da `run.php`) prova la fase 2: per ogni scenario del simulatore (`guarnizione`, `riscaldamento`, `sole`, `vetro-appannato`, `vetro-sporco`, `camera-mossa`, `camera-ferma`) una webcam nuova riceve giorni di storico con il guasto e poi la riparazione; metriche foto e regole girano ora per ora con l'ora finta, e l'avviso deve aprirsi durante il guasto e chiudersi da solo dopo. Poi una webcam sana senza avvisi, comandi (consegna solo con intestazione e scope, ack dal simulatore, scadenza, validazione, pulsanti del pannello), metriche (memoria insufficiente), pagina Avvisi, disponibilità, ticket con i finti Dolibarr 1.2 e 1.3 e VictoriaLogs con un finto server. Dura qualche minuto.
 
 ```sh
 TEST_DB_HOST=127.0.0.1 TEST_DB_PORT=3306 TEST_DB_NAME=webcam2_test TEST_DB_USER=webcam2 TEST_DB_PASS=... php tests/run.php
@@ -213,4 +258,4 @@ Su Windows: `set TEST_DB_PASS=...` e poi `C:\xampp\php\php.exe tests\run.php` (s
 - `from_queue = 1` quando la foto arriva più di 15 minuti dopo lo scatto (il contratto non prevede un campo esplicito).
 - Le medie orarie usano solo i campioni con `time_synced = true`; gli altri si contano in `samples_unsynced`.
 - La retention delle foto cancella il file ma tiene il record in `photos` (`deleted_at`) con lo SHA-256, per le certificazioni.
-- Prossimi passi: miniature (`current-1280.jpg`), archivio pubblico per giorno, time-lapse, avviso `webcam.silent`, utenti dei clienti, ticket e interventi verso Dolibarr.
+- Prossimi passi: miniature (`current-1280.jpg`), archivio pubblico per giorno, time-lapse, utenti dei clienti, interventi verso Dolibarr, pagina per le esclusioni dalla disponibilità (ora solo nella tabella `availability_exclusions`).

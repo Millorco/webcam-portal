@@ -7,7 +7,7 @@
 services:
   portal:
     build: .
-    image: webcam-portal:0.1
+    image: webcam-portal:0.2
     container_name: webcam-portal
     restart: unless-stopped
     env_file: .env
