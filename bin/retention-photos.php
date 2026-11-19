@@ -4,7 +4,10 @@
  * cancella gli originali dal disco tenendo una foto l'ora per webcam. I record
  * restano in photos (deleted_at) con lo SHA-256. Pulisce anche la cache delle
  * foto ridotte per i siti (storage/cache/img): riduzioni delle foto cancellate
- * e quelle non usate da site_api.cache_days giorni. Da eseguire una volta al giorno.
+ * e quelle non usate da site_api.cache_days giorni. Toglie anche i timelapse
+ * scaduti (timelapse.keep_days) e i loghi cancellati da più di 30 giorni; non
+ * cancella mai gli originali delle foto dei certificati emessi. Da eseguire
+ * una volta al giorno.
  *
  *   php bin/retention-photos.php [--giorni 90] [--cache-giorni 30] [--prova]
  */
@@ -16,7 +19,9 @@ require dirname(__DIR__) . '/src/bootstrap.php';
 use WebcamPortal\Cli;
 use WebcamPortal\Config;
 use WebcamPortal\Log;
+use WebcamPortal\Overlay\Overlay;
 use WebcamPortal\Service\PhotoRetention;
+use WebcamPortal\Service\Timelapse;
 use WebcamPortal\Site\Images;
 
 Cli::only();
@@ -36,6 +41,9 @@ if ($cacheDays >= 1) {
 	$c = Images::prune($cacheDays, $dry);
 	$msg .= sprintf('; cache delle riduzioni: %d file non usati da %d giorni (%.1f MB)', $c['files'], $cacheDays, $c['bytes'] / 1048576);
 }
+$tl = Timelapse::expire(null, $dry);
+$ov = $dry ? 0 : Overlay::pruneAssets();
+$msg .= sprintf('; timelapse scaduti: %d; loghi tolti da più di 30 giorni: %d', $tl, $ov);
 if (!$dry) {
 	Log::info($msg, 'cron');
 }
