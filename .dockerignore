@@ -1,0 +1,6 @@
+.git
+.env
+config/config.php
+storage/*
+!storage/.gitkeep
+docs

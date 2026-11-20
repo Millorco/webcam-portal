@@ -1,0 +1,24 @@
+# webcam-portal: tutto passa da index.php tranne i file esistenti (assets/)
+Options -Indexes -MultiViews
+DirectoryIndex index.php
+
+<IfModule mod_rewrite.c>
+	RewriteEngine On
+	# Apache con mod_php non passa sempre Authorization: Bearer a PHP
+	RewriteCond %{HTTP:Authorization} .
+	RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+	RewriteCond %{REQUEST_FILENAME} !-f
+	RewriteRule ^ index.php [L,QSA]
+</IfModule>
+
+<IfModule !mod_rewrite.c>
+	ErrorDocument 404 "mod_rewrite di Apache non attivo: serve per webcam-portal"
+</IfModule>
+
+# Apache 2.4.13+: passa l'intestazione Authorization anche a CGI/FastCGI
+<IfModule mod_version.c>
+	<IfVersion >= 2.4.13>
+		CGIPassAuth On
+	</IfVersion>
+</IfModule>

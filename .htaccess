@@ -1,0 +1,16 @@
+# webcam-portal in una sottocartella di XAMPP (es. C:\xampp\htdocs\webcam-portal):
+# tutte le richieste vanno in public/, così src/, config/ e storage/ non sono
+# mai raggiungibili dal browser. Sul VPS (Docker) la radice del sito è già public/.
+Options -Indexes
+
+<IfModule mod_rewrite.c>
+	RewriteEngine On
+	RewriteCond %{HTTP:Authorization} .
+	RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+	RewriteRule ^$ public/ [L]
+	RewriteRule ^((?!public/).*)$ public/$1 [L]
+</IfModule>
+
+<IfModule !mod_rewrite.c>
+	Require all denied
+</IfModule>

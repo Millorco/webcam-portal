@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://viewlapse.com/schemas/contratto/comando-v1.schema.json",
+  "title": "Comandi del portal al router (command/1)",
+  "description": "Contratto 1.1. Il router non è raggiungibile dall'esterno (4G, CGNAT): i comandi viaggiano nel campo commands delle risposte di POST /api/v1/photo, /telemetry, /event e di GET /api/v1/commands. Questo schema descrive la risposta di GET /api/v1/commands; $defs/command è il singolo comando, uguale in tutte le risposte. Lista chiusa di tipi: il router rifiuta (command.ack con status rejected) qualsiasi tipo o parametro che non conosce.",
+  "type": "object",
+  "required": ["ok", "server_time", "commands"],
+  "properties": {
+    "ok": { "const": true },
+    "server_time": { "type": "integer", "minimum": 0 },
+    "commands": { "$ref": "#/$defs/commands" },
+    "poll_after": { "$ref": "#/$defs/poll_after" }
+  },
+  "additionalProperties": true,
+
+  "$defs": {
+    "commands": {
+      "description": "Comandi in attesa per questa webcam, dal più vecchio. Assente o vuoto se non ce ne sono. Al massimo 5 per risposta.",
+      "type": "array", "maxItems": 5,
+      "items": { "$ref": "#/$defs/command" }
+    },
+
+    "poll_after": {
+      "description": "Secondi dopo i quali il router chiami GET /api/v1/commands anche senza altro da inviare (es. 60 mentre un boost è in corso). Assente = nessuna richiesta in più.",
+      "type": "integer", "minimum": 30, "maximum": 3600
+    },
+
+    "command": {
+      "type": "object",
+      "required": ["schema", "id", "type", "created_at", "expires_at", "params"],
+      "properties": {
+        "schema": { "const": "command/1" },
+        "id": { "description": "cmd-<commands.id>. Chiave di idempotenza: un comando già eseguito non si riesegue, si conferma di nuovo con lo stesso esito.", "type": "string", "pattern": "^cmd-[0-9]{1,18}$" },
+        "type": { "enum": ["heater.boost", "heater.cancel", "capture.now", "telemetry.flush", "config.set"] },
+        "created_at": { "description": "Unix UTC, ora del portal.", "type": "integer", "minimum": 0 },
+        "expires_at": { "description": "Unix UTC, ora del portal. Al più 24 ore dopo created_at. Il router confronta con la sua ora se sincronizzata, altrimenti con server_time della stessa risposta; scaduto = ack expired senza eseguire.", "type": "integer", "minimum": 0 },
+        "params": { "type": "object" },
+        "reason": { "description": "Perché: id della regola (glass.fog) o nota dell'operatore. Solo per il log del router.", "type": ["string", "null"], "maxLength": 120 }
+      },
+      "additionalProperties": true,
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "heater.boost" } } },
+          "then": { "properties": { "params": {
+            "type": "object", "required": ["duration_s"],
+            "properties": { "duration_s": { "description": "Riscaldamento (e ventola se heat_fan = 1) acceso per tanti secondi, poi torna la logica normale di climate.", "type": "integer", "minimum": 300, "maximum": 3600 } },
+            "additionalProperties": false } } }
+        },
+        {
+          "if": { "properties": { "type": { "enum": ["heater.cancel", "telemetry.flush"] } } },
+          "then": { "properties": { "params": { "type": "object", "maxProperties": 0 } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "capture.now" } } },
+          "then": { "properties": { "params": {
+            "type": "object",
+            "properties": { "upload": { "description": "false = scatta senza caricare (prova della fotocamera). Predefinito true.", "type": "boolean" } },
+            "additionalProperties": false } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "config.set" } } },
+          "then": { "properties": { "params": { "$ref": "#/$defs/config_set" } } }
+        }
+      ]
+    },
+
+    "config_set": {
+      "description": "Una sola opzione UCI per comando, scelta da una lista chiusa (la stessa è scritta nel codice del router, che non si fida del portal). Mai credenziali, URL, token, porte seriali o aggiornamenti. value è sempre una stringa, come in UCI.",
+      "type": "object",
+      "required": ["key", "value"],
+      "properties": {
+        "key": { "type": "string" },
+        "value": { "type": "string", "maxLength": 8 }
+      },
+      "additionalProperties": false,
+      "oneOf": [
+        { "properties": { "key": { "enum": ["general.heating", "general.heat_fan", "general.maintenance_mode"] }, "value": { "enum": ["0", "1"] } } },
+        { "properties": { "key": { "const": "general.heat_dewpoint_margin" }, "value": { "description": "1-10 °C, un decimale", "pattern": "^(10(\\.0)?|[1-9](\\.[0-9])?)$" } } },
+        { "properties": { "key": { "const": "general.heat_hysteresis" }, "value": { "description": "0-5 °C, un decimale", "pattern": "^(5(\\.0)?|[0-4](\\.[0-9])?)$" } } },
+        { "properties": { "key": { "const": "general.heat_min_temp" }, "value": { "description": "da -10 a 15 °C, un decimale", "pattern": "^(-(10(\\.0)?|[0-9](\\.[0-9])?)|15(\\.0)?|1[0-4](\\.[0-9])?|[0-9](\\.[0-9])?)$" } } },
+        { "properties": { "key": { "const": "shooting.photo_time_lapse" }, "value": { "pattern": "^([1-9]|[1-5][0-9]|60)$" } } }
+      ]
+    },
+
+    "ack": {
+      "description": "data dell'evento command.ack (event/1) con cui il router conferma un comando.",
+      "type": "object",
+      "required": ["command_id", "type", "status"],
+      "properties": {
+        "command_id": { "type": "string", "pattern": "^cmd-[0-9]{1,18}$" },
+        "type": { "type": "string", "maxLength": 32 },
+        "status": { "enum": ["done", "rejected", "failed", "expired"] },
+        "reason": { "description": "Con status diverso da done: unknown_type, invalid_params, not_allowed, heating_disabled, protection (rifiutato dalle protezioni del riscaldamento del router, es. temperatura interna troppo alta), busy, maintenance, rate_limited, expired, error. Il portal accetta anche un reason sconosciuto.", "type": ["string", "null"], "maxLength": 32 },
+        "result": { "description": "Esito del comando: heater.boost {until}, heater.cancel {was_active: booleano, c'era un boost in corso}, capture.now {file}, config.set {key, old, new}, telemetry.flush {sent}.", "type": ["object", "null"], "additionalProperties": true }
+      },
+      "additionalProperties": true
+    }
+  }
+}

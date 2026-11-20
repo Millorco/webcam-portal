@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://viewlapse.com/schemas/contratto/evento-v1.schema.json",
   "title": "Lotto di eventi (event/1)",
-  "description": "Corpo di POST /api/v1/event: fatti puntuali del router (riavvii, errori della fotocamera, cambi di versione...). I tipi sono elencati in api-portal-v1.md.",
+  "description": "Corpo di POST /api/v1/event: fatti puntuali del router (riavvii, errori della fotocamera, cambi di versione...). I tipi sono elencati in api-portal-v1.md. Dal contratto 1.1 anche command.ack, la conferma di un comando del portal (data come comando-v1.schema.json#/$defs/ack).",
   "type": "object",
   "required": ["schema", "mac", "events"],
   "properties": {
@@ -31,7 +31,13 @@
           "message": { "type": ["string", "null"], "maxLength": 500 },
           "data": { "type": ["object", "null"], "additionalProperties": true }
         },
-        "additionalProperties": true
+        "additionalProperties": true,
+        "allOf": [
+          {
+            "if": { "required": ["type"], "properties": { "type": { "const": "command.ack" } } },
+            "then": { "required": ["data"], "properties": { "data": { "$ref": "comando-v1.schema.json#/$defs/ack" } } }
+          }
+        ]
       }
     }
   },

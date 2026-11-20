@@ -1,0 +1,42 @@
+{
+  "schema": "event/1",
+  "mac": "94:83:c4:12:ab:cd",
+  "hostname": "monte-cavo",
+  "app_version": "1.2.0",
+  "sent_at": 1795012291,
+  "time_synced": true,
+  "events": [
+    {
+      "id": "3f2a9c1e-E59",
+      "time": 1795012290,
+      "time_synced": true,
+      "uptime": 452190,
+      "type": "command.ack",
+      "severity": "info",
+      "message": "Comando cmd-4410 heater.boost eseguito: riscaldamento acceso fino alle 16:01",
+      "data": {
+        "command_id": "cmd-4410",
+        "type": "heater.boost",
+        "status": "done",
+        "reason": null,
+        "result": { "until": 1795014090 }
+      }
+    },
+    {
+      "id": "3f2a9c1e-E60",
+      "time": 1795012295,
+      "time_synced": true,
+      "uptime": 452195,
+      "type": "command.ack",
+      "severity": "warning",
+      "message": "Comando cmd-4411 config.set rifiutato: valore di general.heat_dewpoint_margin fuori intervallo",
+      "data": {
+        "command_id": "cmd-4411",
+        "type": "config.set",
+        "status": "rejected",
+        "reason": "invalid_params",
+        "result": null
+      }
+    }
+  ]
+}

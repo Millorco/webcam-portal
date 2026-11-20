@@ -1,5 +1,7 @@
 # Telemetria: `telemetry/1`
 
+Versione del documento: 1.1 (contratto 1.1: [campi per la diagnosi](#campi-per-la-diagnosi-contratto-11), facoltativi; il formato resta `telemetry/1`).
+
 Misure del router **ogni 5 minuti, anche senza foto** (anche di notte e in manutenzione), raccolte in coda e inviate a gruppi a `POST /api/v1/telemetry` (vedi [api-portal-v1.md](api-portal-v1.md)).
 
 - Schema: [telemetria-v1.schema.json](telemetria-v1.schema.json)
@@ -64,7 +66,7 @@ ogni 5 min (cron, dopo climate)        ogni 30 min (cron, ritardo casuale 0-120 
 | `abs_humidity`, `abs_humidity_ext` | **nuovi** | g/m³, formula in [foto-v1.md](foto-v1.md#regole-per-il-router) |
 | `fan` | **nuovo** | stato voluto della ventola (oggi segue `heater` se `heat_fan = 1`) |
 
-Così il campione si costruisce copiando `status.json` così com'è, senza rinominare nulla.
+Così il campione si costruisce copiando `status.json` così com'è, senza rinominare nulla. Dal contratto 1.1 `climate` scrive anche i campi per la diagnosi (sotto).
 
 ### `power` (Victron VE.Direct)
 
@@ -128,6 +130,34 @@ Letto dal protocollo testo VE.Direct (19200 baud, un blocco al secondo) su una p
 
 `shots_total`, `power_on_hours`, `power_cycles`, `capture_errors` stanno in `/etc/webcam/counters` (flash: scritto al massimo una volta l'ora per non consumarla) e ripartono da 0 quando cambia `serial`. Il portal salva una riga in `camera_counters` solo quando un valore cambia.
 
+## Campi per la diagnosi (contratto 1.1)
+
+Campi **facoltativi** aggiunti con il contratto 1.1 (luci-app-webcam 1.2.0), sempre in `telemetry/1`: un portal 0.1 li salva in `extra`, un router 1.1.0 non li manda e le regole che ne hanno bisogno valgono `unknown` o usano i campioni (vedi [diagnosi-v1.md](diagnosi-v1.md)).
+
+### In `climate` (scritti da `climate` in `status.json`)
+
+| Campo | Tipo | Significato | Regola |
+|---|---|---|---|
+| `heater_on_since` | intero/null | ora Unix UTC in cui il riscaldamento si è acceso l'ultima volta; `null` se spento. Si ricava dall'ora di modifica del file di stato `heater` quando passa a 1 | `enclosure.heater` |
+| `heater_duty_pct` | 0-100/null | cicli di `climate` con riscaldamento acceso negli ultimi 60 minuti (12 cicli, file in `/tmp`) | pannello, `enclosure.seal` |
+| `heat_reason` | `dewpoint`, `min_temp`, `boost`, `capture`, `off` | perché il riscaldamento è nello stato attuale: vicino al punto di rugiada, sotto `heat_min_temp`, boost comandato dal portal, spento per lo scatto, nessuna condizione | `enclosure.heater`, `glass.fog` |
+| `heater_boost_until` | intero/null | fine del boost di `heater.boost` (ora Unix UTC) | `glass.fog` |
+| `dewpoint_margin` | °C/null | `heat_dewpoint_margin` configurato | `enclosure.heater` |
+| `fan_rpm` | intero/null | giri della ventola; solo con una scheda dotata di tachimetro (non previsto in fw 2.4: campo assente) | `enclosure.fan`, `enclosure.overheat` |
+
+`fan` resta lo stato **voluto** della ventola: solo `fan_rpm` dice se gira davvero.
+
+### In `camera` del campione
+
+| Campo | Tipo | Significato | Regola |
+|---|---|---|---|
+| `scheduled` | booleano/null | in questo momento `capture_service` deve scattare: `false` in manutenzione o fuori dalle ore di scatto | `camera.stalled`, disponibilità |
+| `interval_min` | intero/null | intervallo di scatto in vigore (minuti), fasce speciali comprese (`schedule`) | `camera.stalled` |
+
+### Nel database
+
+Nuove colonne di `measurements` ([schema-mariadb-002.sql](schema-mariadb-002.sql)): `heater_on_since`, `heater_duty_pct`, `heat_reason`, `heater_boost_until`, `dewpoint_margin`, `fan_rpm`, `cam_scheduled` (`camera.scheduled`), `cam_interval_min` (`camera.interval_min`). Le ore Unix diventano `DATETIME` UTC come `ts`.
+
 ## Ora non sincronizzata
 
 Il GL-MT300N-V2 non ha orologio a batteria. Dopo un riavvio, finché NTP non sincronizza:
@@ -145,6 +175,8 @@ Il GL-MT300N-V2 non ha orologio a batteria. Dopo un riavvio, finché NTP non sin
 | `climate.temperature` / `humidity` / `dewpoint` / `abs_humidity` | `t_in` / `rh_in` / `dp_in` / `ah_in` |
 | `climate.temperature_ext` / `humidity_ext` / `dewpoint_ext` / `abs_humidity_ext` | `t_ext` / `rh_ext` / `dp_ext` / `ah_ext` |
 | `climate.heater`, `fan`, `heating_enabled`, `sensor_ok`, `ext_sensor_ok` | colonne omonime |
+| `climate.heater_on_since`, `heater_duty_pct`, `heat_reason`, `heater_boost_until`, `dewpoint_margin`, `fan_rpm` (1.1) | colonne omonime (migrazione 002) |
+| `camera.scheduled`, `camera.interval_min` (1.1) | `cam_scheduled`, `cam_interval_min` (migrazione 002) |
 | `power.*` | `battery_v`, `battery_a`, `panel_v`, `panel_w`, `load_a`, `load_on`, `charge_state`, `mppt_state`, `victron_error` (`error`), `soc_pct`, `yield_today_wh`, `yield_total_wh` |
 | `net.type` | `net_type` |
 | `net.*`, `sys.*` | colonne omonime (`queue_samples`, `tmp_free_kb`...) |

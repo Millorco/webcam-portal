@@ -49,7 +49,9 @@
           "type": ["object", "null"],
           "properties": {
             "present": { "description": "Fotocamera vista su USB all'ultimo controllo.", "type": ["boolean", "null"] },
-            "power": { "description": "Relè della fotocamera acceso.", "type": ["boolean", "null"] }
+            "power": { "description": "Relè della fotocamera acceso.", "type": ["boolean", "null"] },
+            "scheduled": { "description": "Contratto 1.1. In questo momento capture_service deve scattare (false in manutenzione o fuori dalle ore di scatto).", "type": ["boolean", "null"] },
+            "interval_min": { "description": "Contratto 1.1. Intervallo di scatto in vigore (minuti), fasce speciali comprese.", "type": ["integer", "null"], "minimum": 1, "maximum": 1440 }
           },
           "additionalProperties": true
         }
@@ -58,7 +60,7 @@
     },
 
     "climate": {
-      "description": "Lo stesso oggetto di /tmp/webcam/status.json (scritto da climate), con abs_humidity, abs_humidity_ext e fan in più. Temperature in °C anche se la LuCI mostra °F.",
+      "description": "Lo stesso oggetto di /tmp/webcam/status.json (scritto da climate), con abs_humidity, abs_humidity_ext e fan in più; dal contratto 1.1 anche i campi per la diagnosi (heater_on_since, heater_duty_pct, heat_reason, heater_boost_until, dewpoint_margin, fan_rpm). Temperature in °C anche se la LuCI mostra °F.",
       "type": "object",
       "properties": {
         "time": { "type": ["integer", "null"] },
@@ -76,7 +78,13 @@
         "heating_enabled": { "type": ["boolean", "null"] },
         "heater": { "type": ["boolean", "null"] },
         "fan": { "type": ["boolean", "null"] },
-        "board_fw": { "type": ["string", "null"] }
+        "board_fw": { "type": ["string", "null"] },
+        "heater_on_since": { "description": "Contratto 1.1. Ora (Unix UTC) in cui il riscaldamento si è acceso l'ultima volta; null se spento.", "type": ["integer", "null"], "minimum": 0 },
+        "heater_duty_pct": { "description": "Contratto 1.1. Percentuale di cicli di climate con riscaldamento acceso negli ultimi 60 minuti (12 cicli).", "type": ["integer", "null"], "minimum": 0, "maximum": 100 },
+        "heat_reason": { "description": "Contratto 1.1. Perché il riscaldamento è nello stato attuale: dewpoint (vicino al punto di rugiada), min_temp (sotto heat_min_temp), boost (comando heater.boost), capture (spento durante lo scatto), off (nessuna condizione).", "enum": ["dewpoint", "min_temp", "boost", "capture", "off", null] },
+        "heater_boost_until": { "description": "Contratto 1.1. Fine del boost comandato dal portal (Unix UTC); null se nessun boost.", "type": ["integer", "null"], "minimum": 0 },
+        "dewpoint_margin": { "description": "Contratto 1.1. heat_dewpoint_margin configurato sul router (°C).", "type": ["number", "null"], "minimum": 0, "maximum": 20 },
+        "fan_rpm": { "description": "Contratto 1.1. Giri al minuto della ventola, solo con una scheda dotata di tachimetro; altrimenti assente o null.", "type": ["integer", "null"], "minimum": 0, "maximum": 30000 }
       },
       "additionalProperties": true
     },

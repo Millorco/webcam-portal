@@ -1,11 +1,13 @@
 # Configurazione locale e segreti
 .env
+config/config.php
 config/config.local.php
 *.local.php
 
 # Dati ricevuti dai router
 storage/*
 !storage/.gitkeep
+!storage/.htaccess
 
 # Dipendenze e cache
 vendor/

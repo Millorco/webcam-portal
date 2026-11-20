@@ -1,5 +1,7 @@
 # API del portal per i router: v1
 
+Versione del documento: **1.2** (contratto 1.3): nessun cambio per i router; `current.jpg` può avere la [sovrimpressione](#sovrimpressione-su-currentjpg-contratto-13) del portal e c'è l'URL del webhook del bot Telegram. Versione 1.1 (contratto 1.1, compatibile con 1.0): il canale dei [comandi al router](#comandi-al-router), l'endpoint `GET /api/v1/commands`, l'evento `command.ack` e gli eventi degli avvisi del portal. Il percorso resta `/api/v1/`.
+
 Base: `https://<portal>/api/v1` (in anteprima su XAMPP: `http://localhost/webcam-portal/api/v1`). Solo HTTPS in produzione: il portal rifiuta HTTP con `403` salvo `APP_ENV=dev`.
 
 | Metodo | Percorso | Chi | Cosa |
@@ -8,8 +10,10 @@ Base: `https://<portal>/api/v1` (in anteprima su XAMPP: `http://localhost/webcam
 | `POST` | `/api/v1/telemetry` | router | lotto `telemetry/1` |
 | `POST` | `/api/v1/event` | router | lotto `event/1` |
 | `GET` | `/api/v1/whoami` | router, LuCI | prova del token ("Prova connessione") |
+| `GET` | `/api/v1/commands` | router | comandi in attesa (1.1, [Comandi al router](#comandi-al-router)) |
 | `GET` | `/cam/{slug}/current.jpg` | pubblico | ultima foto |
 | `GET` | `/cam/{slug}/current.json` | pubblico | dati pubblici dell'ultima foto |
+| `POST` | `/telegram/webhook` | Telegram | 1.2: aggiornamenti del bot, con `X-Telegram-Bot-Api-Secret-Token` ([servizi-v1.md](servizi-v1.md#bot-telegram-o10)) |
 
 ## Autenticazione
 
@@ -22,6 +26,7 @@ Authorization: Bearer wct_Obycxu0Nk92mqIyjOZupDmsKcwweRudI3Pg85IZVi0g
 - Il token identifica la webcam. Il `mac` nel corpo **deve** essere quello della webcam del token, altrimenti `409`. Una webcam con `status = 9` (ritirata) o un token revocato/scaduto → `403`.
 - La prima volta: l'operatore crea la webcam nel portal (o il portal la importa da Dolibarr per MAC) e genera il token. Il router non si registra da solo con il token: evita che un token rubato crei webcam.
 - `User-Agent: luci-app-webcam/<versione>` (oggi `inventory_report` manda `luci-app-webcam`).
+- `X-Webcam-Features: commands/1` (1.1): il router sa eseguire i comandi `command/1`. Il portal mette `commands` nelle risposte **solo** alle richieste con questa intestazione e solo se il token ha lo scope `commands`; un router 1.1.0 non la manda e non riceve comandi. Più funzioni si separano con la virgola.
 
 ## Risposte
 
@@ -32,7 +37,9 @@ Sempre JSON, `Content-Type: application/json; charset=utf-8`:
 { "ok": false, "error": "sha256_mismatch", "message": "Lo SHA-256 del file ricevuto non corrisponde a meta.sha256", "server_time": 1795012231 }
 ```
 
-`server_time` permette al router di accorgersi di un orologio sbagliato anche senza NTP (non lo usa per impostare l'ora: solo per un avviso nel log).
+`server_time` permette al router di accorgersi di un orologio sbagliato anche senza NTP (non lo usa per impostare l'ora: solo per un avviso nel log e per la scadenza dei comandi).
+
+Dal 1.1 le risposte di successo (`200`/`201`) di `/photo`, `/telemetry`, `/event` e `/commands` possono contenere `commands` (comandi in attesa) e `poll_after` (vedi [Comandi al router](#comandi-al-router)). Un router che non li conosce li ignora.
 
 | Codice | Significato | Cosa fa il router |
 |---|---|---|
@@ -141,11 +148,96 @@ Gli eventi si mandano **subito** (non aspettano i 30 minuti) e vanno in coda se 
 | `maintenance.on`, `maintenance.off` | notice | modalità manutenzione | |
 | `ntp.synced` | debug | prima sincronizzazione dopo l'avvio | `offset_s` |
 
-Interventi (`intervention`, `source = operator`) e avvisi del portal (`webcam.silent`: nessuna foto o telemetria da N minuti) li crea il portal, non il router.
+Tipi aggiunti nella versione 1.1 del documento (i primi quattro il router li manda già dalla 1.1.0 di luci-app-webcam):
+
+| `type` | `severity` | Quando | `data` |
+|---|---|---|---|
+| `heating.on`, `heating.off` | info | `climate` accende o spegne il riscaldamento | `temperature`, `humidity`, `dewpoint`, `temperature_ext` |
+| `sensor.ok` | notice | un sensore SHT31 torna a rispondere | `sensor` |
+| `service.start` | info | `capture_service` parte | |
+| `command.ack` | info; warning se non `done` | esito di un comando del portal | `command_id`, `type`, `status`, `reason`, `result` ([comando-v1.schema.json](comando-v1.schema.json), `$defs/ack`; esempio [esempi/evento-ack-v1.json](esempi/evento-ack-v1.json)) |
+
+Eventi creati dal portal, non dal router (`source = portal` o `operator`): interventi (`intervention`) e gli avvisi delle regole di diagnosi, `alert.open`, `alert.update`, `alert.close` con `data.rule` e `data.alert_id` ([diagnosi-v1.md](diagnosi-v1.md)). L'avviso `webcam.silent` previsto nella prima versione è sostituito dalle regole `telemetry.stalled` e `camera.stalled`.
 
 ## `GET /api/v1/whoami`
 
-Con il token: `200 { "ok": true, "webcam": { "id": 12, "slug": "monte-cavo", "mac": "94:83:c4:12:ab:cd", "name": "Monte Cavo" }, "scopes": ["photo","telemetry","event"], "server_time": ... }`. Serve al pulsante "Prova connessione" della LuCI.
+Con il token: `200 { "ok": true, "webcam": { "id": 12, "slug": "monte-cavo", "mac": "94:83:c4:12:ab:cd", "name": "Monte Cavo" }, "scopes": ["photo","telemetry","event","commands"], "server_time": ... }`. Serve al pulsante "Prova connessione" della LuCI. Dal 1.1 `scopes` può contenere `commands`.
+
+## Comandi al router
+
+Il router sta dietro il 4G (CGNAT) e non è raggiungibile dal portal: **è sempre il router a chiedere**. I comandi viaggiano quindi nelle risposte alle richieste che il router fa già, senza connessioni in più nel caso normale.
+
+| Dove | Quando arriva | Ritardo tipico |
+|---|---|---|
+| risposta di `POST /api/v1/photo` | a ogni foto | intervallo di scatto (5-15 min) |
+| risposta di `POST /api/v1/telemetry` e `/event` | ogni 30 minuti, e subito per gli eventi | fino a 30 min |
+| `GET /api/v1/commands` | all'avvio del router, dopo `poll_after` secondi se la risposta precedente lo chiede, dal pulsante della LuCI | — |
+
+Di notte e in manutenzione le foto possono mancare: restano telemetria ed eventi. Il router **non** interroga `/commands` di continuo (ogni richiesta TLS in 4G costa qualche KB); lo fa solo quando il portal lo chiede con `poll_after` (es. 60 s mentre un boost è in corso, per avere subito la conferma).
+
+### Formato
+
+Ogni comando è un oggetto `command/1` ([comando-v1.schema.json](comando-v1.schema.json), esempio [esempi/comandi-v1.json](esempi/comandi-v1.json)):
+
+```json
+{ "ok": true, "accepted": 6, "duplicates": 0, "rejected": [], "server_time": 1795012231,
+  "commands": [
+    { "schema": "command/1", "id": "cmd-4410", "type": "heater.boost",
+      "created_at": 1795012200, "expires_at": 1795014000,
+      "params": { "duration_s": 1800 }, "reason": "glass.fog" }
+  ],
+  "poll_after": 300 }
+```
+
+| Campo | Significato |
+|---|---|
+| `id` | `cmd-<numero>`: chiave di idempotenza |
+| `type` | uno dei tipi della lista chiusa sotto |
+| `created_at`, `expires_at` | ora del portal; scadenza al massimo 24 ore dopo |
+| `params` | parametri del tipo, validati da entrambi i lati |
+| `reason` | regola o nota dell'operatore, per il log del router |
+
+### Tipi (lista chiusa)
+
+| `type` | `params` | Cosa fa il router | Rifiuta con `reason` |
+|---|---|---|---|
+| `heater.boost` | `duration_s` 300-3600 | scrive `/tmp/webcam/heater_boost_until`; `climate` tiene acceso il riscaldamento (e la ventola se `heat_fan = 1`) fino a quell'ora, poi torna alla logica normale. Lo scatto lo spegne come sempre per il tempo della foto | `heating_disabled` se `heating = 0` (forse non c'è la resistenza); `protection` se lo impediscono le protezioni del riscaldamento del router |
+| `heater.cancel` | nessuno | toglie il boost; `result` = `{ "was_active": true/false }` | |
+| `capture.now` | `upload` (booleano, predefinito `true`) | come il pulsante "Scatta ora" (`capture_now`), anche in manutenzione | `busy` se c'è uno scatto in corso; `rate_limited` se l'ultimo `capture.now` è di meno di 10 minuti fa |
+| `telemetry.flush` | nessuno | `telemetry_sample` e `telemetry_send` subito | `busy` se un invio è già in corso |
+| `config.set` | `key`, `value` (stringa) | `uci set webcam.@<sezione>[0].<opzione>=<valore>`, `uci commit`, evento `config.change` come dalla LuCI | `not_allowed` per una chiave fuori lista, `invalid_params` per un valore fuori intervallo |
+
+Chiavi ammesse da `config.set` (lista scritta nel codice del router, non presa dal portal):
+
+| `key` | Valori |
+|---|---|
+| `general.heating`, `general.heat_fan`, `general.maintenance_mode` | `0`, `1` |
+| `general.heat_dewpoint_margin` | 1-10 (°C, un decimale) |
+| `general.heat_hysteresis` | 0-5 (°C, un decimale) |
+| `general.heat_min_temp` | da -10 a 15 (°C, un decimale) |
+| `shooting.photo_time_lapse` | 1-60 (minuti) |
+
+Fuori dalla lista, sempre: credenziali, token, URL (`portal_url`, `upload_server`, `update_url`...), porte seriali, `telemetry` (spegnerla taglierebbe il canale dei comandi), comandi di shell, riavvii, aggiornamenti. Per tutto il resto c'è l'accesso remoto con rttys.
+
+### Esecuzione e conferma
+
+1. Il router esegue i comandi nell'ordine ricevuto, **uno alla volta**, in background (la richiesta che li ha portati è già chiusa).
+2. Scadenza: un comando con `expires_at` passato (ora del router se sincronizzata, altrimenti `server_time` della risposta) **non** si esegue: `command.ack` con `status = expired`.
+3. Idempotenza: il router tiene gli `id` eseguiti negli ultimi 2 giorni (`/tmp/webcam/commands_done`, con l'esito). Un comando ricevuto di nuovo non si riesegue: si rimanda lo stesso `command.ack`. Dopo un riavvio la lista è vuota: rieseguire un `heater.boost`, `capture.now`, `config.set` o `telemetry.flush` non fa danni.
+4. Conferma: evento `command.ack` (`POST /api/v1/event`, subito, in coda se manca la rete) con `data.command_id`, `type`, `status` (`done`, `rejected`, `failed`, `expired`), `reason`, `result` (es. `{ "until": 1795014090 }` per il boost, `{ "file": "raw_20261118-1530.jpg" }` per lo scatto, `{ "key", "old", "new" }` per `config.set`, `{ "was_active": true }` per `heater.cancel`). Anche la riga di log come per tutte le azioni.
+5. Il portal rimanda un comando in ogni risposta finché non riceve il `command.ack` o il comando scade (`commands.status`: `pending` → `delivered` → `done`/`rejected`/`failed`/`expired`). Al massimo 5 comandi per risposta, dal più vecchio.
+
+### Sicurezza
+
+- I comandi arrivano solo in risposte HTTPS autenticate con il token della webcam; nessuna porta aperta sul router.
+- **Lista chiusa** di tipi e di chiavi, con intervalli, controllata dal router: un portal compromesso può al più accendere il riscaldamento, scattare una foto o cambiare queste poche opzioni.
+- Scope `commands` del token: senza, il portal non manda comandi a quella webcam. Il router può spegnerli con l'opzione UCI `webcam.@server[0].commands = 0` (nessuna intestazione `X-Webcam-Features`).
+- Chi crea i comandi: le regole del portal ([diagnosi-v1.md](diagnosi-v1.md#comandi-mandati-dalle-regole)) e gli operatori/amministratori dal pannello (`commands.user_id`); mai gli utenti dei clienti.
+- Limiti del portal: al massimo 10 comandi creati per webcam all'ora, 4 `heater.boost` al giorno dalle regole.
+
+### `GET /api/v1/commands`
+
+Con il token e `X-Webcam-Features: commands/1`: `200` con `ok`, `server_time`, `commands` (anche vuoto) e `poll_after` facoltativo. Senza l'intestazione o senza scope `commands`: `200` con `commands: []`. Conta nel limite di 120 richieste al minuto.
 
 ## `GET /cam/{slug}/current.jpg` (pubblico)
 
@@ -153,10 +245,20 @@ Con il token: `200 { "ok": true, "webcam": { "id": 12, "slug": "monte-cavo", "ma
 - `Content-Type: image/jpeg`, `ETag: "<sha256>"`, `Last-Modified` = ora dello scatto, `Cache-Control: public, max-age=60`. Con `If-None-Match` uguale → `304`.
 - Redirect assente: l'URL è stabile, adatto a Windy, siti dei clienti e `<img>` incorporati.
 - `GET /cam/{slug}/current.json` (pubblico, stesse condizioni): `{ "slug", "name", "time", "datetime", "mode", "temperature_ext", "humidity_ext", "url": ".../current.jpg", "sha256" }` (niente MAC, IP, token o dati tecnici).
-- In seguito (non in v1): `current-1280.jpg` e simili per le miniature, archivio pubblico per giorno, time-lapse.
+- Miniature e archivio per giorno: dal contratto 1.2 nell'API dei siti ([api-siti-v1.md](api-siti-v1.md), `/api/site/v1/...` e `/img/...`). Timelapse, foto del giorno e documenti: dal contratto 1.3, stessa API (`/media/...`).
+
+### Sovrimpressione su `current.jpg` (contratto 1.3)
+
+Con la funzione `overlay` attiva e `current` in `overlay_config.apply_to` ([servizi-v1.md](servizi-v1.md#sovrimpressione-m2-m12)):
+
+- `current.jpg` è la versione **ridotta a `current_size`** (predefinito 1920 px di lato lungo) **con la sovrimpressione**, non più l'originale; `current_size = orig` lascia l'originale senza sovrimpressione, come nella 1.0.
+- `ETag: "<sha256 della foto>-o<overlay_rev>"`: cambia anche quando cambia solo la sovrimpressione. `Last-Modified` resta l'ora dello scatto.
+- `current.json` ha in più `"overlay": true|false` e `width`/`height` dell'immagine servita; `sha256` resta quello dell'**originale** (l'immagine servita è derivata).
+- Ogni richiesta di `current.jpg` (anche `304`) conta nelle statistiche come fonte `image`.
 
 ## Compatibilità
 
 - Nuove versioni del formato: `photo/2`, `telemetry/2`... Il portal accetta tutte le versioni che conosce. Il router manda la più recente che sa scrivere.
 - Nuovi campi facoltativi non cambiano versione. Una versione nuova serve solo se un campo cambia significato, unità o diventa obbligatorio.
+- Versione 1.1 del documento: tutto quello che aggiunge è facoltativo. Un router 1.1.0 (senza `X-Webcam-Features`) e un portal 0.1 (senza `commands` nelle risposte) continuano a funzionare insieme alle versioni nuove in tutte le combinazioni.
 - Nuove versioni dell'API: `/api/v2/...` accanto a `/api/v1/...`; v1 resta attiva finché esistono router che la usano (`webcams.app_version`).

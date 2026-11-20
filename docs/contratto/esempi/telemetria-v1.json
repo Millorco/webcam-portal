@@ -40,7 +40,12 @@
         "heating_enabled": true,
         "heater": false,
         "fan": false,
-        "board_fw": "2.4"
+        "board_fw": "2.4",
+        "heater_on_since": null,
+        "heater_duty_pct": 0,
+        "heat_reason": "off",
+        "heater_boost_until": null,
+        "dewpoint_margin": 3.0
       },
       "power": {
         "time": 1795010400,
@@ -88,7 +93,9 @@
       },
       "camera": {
         "present": true,
-        "power": true
+        "power": true,
+        "scheduled": true,
+        "interval_min": 10
       }
     },
     {
@@ -112,7 +119,12 @@
         "heating_enabled": true,
         "heater": false,
         "fan": false,
-        "board_fw": "2.4"
+        "board_fw": "2.4",
+        "heater_on_since": null,
+        "heater_duty_pct": 0,
+        "heat_reason": "off",
+        "heater_boost_until": null,
+        "dewpoint_margin": 3.0
       },
       "power": {
         "time": 1795010700,
@@ -160,7 +172,9 @@
       },
       "camera": {
         "present": true,
-        "power": true
+        "power": true,
+        "scheduled": true,
+        "interval_min": 10
       }
     },
     {
@@ -184,7 +198,12 @@
         "heating_enabled": true,
         "heater": false,
         "fan": false,
-        "board_fw": "2.4"
+        "board_fw": "2.4",
+        "heater_on_since": null,
+        "heater_duty_pct": 0,
+        "heat_reason": "off",
+        "heater_boost_until": null,
+        "dewpoint_margin": 3.0
       },
       "power": null,
       "net": {
@@ -212,7 +231,9 @@
       },
       "camera": {
         "present": true,
-        "power": true
+        "power": true,
+        "scheduled": true,
+        "interval_min": 10
       }
     },
     {
@@ -236,7 +257,12 @@
         "heating_enabled": true,
         "heater": false,
         "fan": false,
-        "board_fw": "2.4"
+        "board_fw": "2.4",
+        "heater_on_since": null,
+        "heater_duty_pct": 0,
+        "heat_reason": "off",
+        "heater_boost_until": null,
+        "dewpoint_margin": 3.0
       },
       "power": {
         "time": 1795011300,
@@ -284,7 +310,9 @@
       },
       "camera": {
         "present": true,
-        "power": true
+        "power": true,
+        "scheduled": true,
+        "interval_min": 10
       }
     },
     {
@@ -308,7 +336,12 @@
         "heating_enabled": true,
         "heater": true,
         "fan": true,
-        "board_fw": "2.4"
+        "board_fw": "2.4",
+        "heater_on_since": 1795011540,
+        "heater_duty_pct": 8,
+        "heat_reason": "dewpoint",
+        "heater_boost_until": null,
+        "dewpoint_margin": 3.0
       },
       "power": {
         "time": 1795011600,
@@ -356,7 +389,9 @@
       },
       "camera": {
         "present": true,
-        "power": true
+        "power": true,
+        "scheduled": true,
+        "interval_min": 10
       }
     },
     {
@@ -380,7 +415,12 @@
         "heating_enabled": true,
         "heater": true,
         "fan": true,
-        "board_fw": "2.4"
+        "board_fw": "2.4",
+        "heater_on_since": 1795011540,
+        "heater_duty_pct": 17,
+        "heat_reason": "dewpoint",
+        "heater_boost_until": null,
+        "dewpoint_margin": 3.0
       },
       "power": {
         "time": 1795011900,
@@ -428,7 +468,9 @@
       },
       "camera": {
         "present": true,
-        "power": true
+        "power": true,
+        "scheduled": true,
+        "interval_min": 10
       }
     }
   ]
