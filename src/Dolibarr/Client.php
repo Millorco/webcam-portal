@@ -45,6 +45,12 @@ final class Client
 			'Accept: application/json',
 			'User-Agent: webcam-portal/' . (defined('WEBCAM_PORTAL_VERSION') ? WEBCAM_PORTAL_VERSION : '0'),
 		];
+		// Con la lingua di Dolibarr su "auto" le API scelgono la lingua da
+		// Accept-Language: senza, eventi e testi in agenda uscirebbero in inglese.
+		$lang = (string) \WebcamPortal\Config::get()->value('dolibarr.lang', 'it-IT');
+		if ($lang !== '' && preg_match('/^[A-Za-z]{2,3}([-_][A-Za-z]{2})?$/', $lang)) {
+			$headers[] = 'Accept-Language: ' . str_replace('_', '-', $lang);
+		}
 		$content = null;
 		if ($body !== null) {
 			$content = json_encode($body, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION);

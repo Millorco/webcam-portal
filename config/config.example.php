@@ -58,6 +58,7 @@ return [
 		'api_key' => '',            // DOLIBARR_API_KEY (utente webcam-portal)
 		'timeout' => 20,            // DOLIBARR_TIMEOUT, secondi
 		'verify_tls' => true,       // DOLIBARR_VERIFY_TLS
+		'lang' => 'it-IT',          // lingua dei testi che Dolibarr scrive (eventi in agenda); '' = quella di Dolibarr
 	],
 
 	// Accesso remoto rttys per i link nei ticket, se Dolibarr (GET
